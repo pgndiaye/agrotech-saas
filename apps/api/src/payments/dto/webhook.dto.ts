@@ -1,0 +1,29 @@
+import { IsString, IsOptional } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+
+export class WaveWebhookDto {
+  @ApiPropertyOptional()
+  @IsString()
+  id: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  client_reference?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  payment_status?: string; // processing | succeeded | failed
+}
+
+export class OrangeWebhookDto {
+  @ApiPropertyOptional()
+  @IsString()
+  notifToken: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  status?: string; // SUCCESSFULL | FAILED
+}

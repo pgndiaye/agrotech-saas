@@ -1,0 +1,193 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Tenant (Coopérative / Organisation) ───────────────────────────────────
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      Plan     @default(FREE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        User[]
+  stocks       Stock[]
+  transactions Transaction[]
+  listings     Listing[]
+  subscription Subscription?
+  payments     Payment[]
+}
+
+enum Plan {
+  FREE
+  PREMIUM
+}
+
+// ─── User ──────────────────────────────────────────────────────────────────
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(FARMER)
+  language     Language @default(FR)
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  FARMER
+}
+
+enum Language {
+  FR
+  WO
+}
+
+// ─── Stock (Semences / Engrais / Récoltes) ─────────────────────────────────
+model Stock {
+  id          String      @id @default(cuid())
+  name        String
+  category    StockCategory
+  quantity    Float
+  unit        String
+  minQuantity Float       @default(0)
+  description String?
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  movements StockMovement[]
+}
+
+enum StockCategory {
+  SEEDS
+  FERTILIZER
+  HARVEST
+  EQUIPMENT
+  OTHER
+}
+
+model StockMovement {
+  id        String        @id @default(cuid())
+  stockId   String
+  stock     Stock         @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  type      MovementType
+  quantity  Float
+  note      String?
+  createdAt DateTime      @default(now())
+}
+
+enum MovementType {
+  IN
+  OUT
+}
+
+// ─── Finance (Revenus / Dépenses) ─────────────────────────────────────────
+model Transaction {
+  id          String          @id @default(cuid())
+  type        TransactionType
+  amount      Float
+  currency    String          @default("XOF")
+  category    String
+  description String?
+  date        DateTime        @default(now())
+  tenantId    String
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+// ─── Marketplace ───────────────────────────────────────────────────────────
+model Listing {
+  id          String        @id @default(cuid())
+  title       String
+  description String?
+  price       Float
+  currency    String        @default("XOF")
+  unit        String
+  quantity    Float
+  category    StockCategory
+  status      ListingStatus @default(ACTIVE)
+  tenantId    String
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  CANCELLED
+}
+
+// ─── Subscription (Abonnement tenant) ─────────────────────────────────────
+model Subscription {
+  id        String             @id @default(cuid())
+  tenantId  String             @unique
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan      Plan               @default(FREE)
+  status    SubscriptionStatus @default(ACTIVE)
+  startDate DateTime           @default(now())
+  endDate   DateTime?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  payments Payment[]
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PENDING
+}
+
+// ─── Payment (Historique paiements) ───────────────────────────────────────
+model Payment {
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription?   @relation(fields: [subscriptionId], references: [id])
+  provider       PaymentProvider
+  amount         Float
+  currency       String          @default("XOF")
+  status         PaymentStatus   @default(PENDING)
+  externalId     String?         // ID côté Wave ou Orange Money
+  checkoutUrl    String?         // URL de paiement Wave
+  phoneNumber    String?         // Numéro pour Orange Money
+  metadata       Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+enum PaymentProvider {
+  WAVE
+  ORANGE_MONEY
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}

@@ -1,0 +1,18 @@
+{
+  "name": "agrotech-saas",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names API,WEB --prefix-colors cyan,magenta \"npm run dev --prefix apps/api\" \"npm run dev --prefix apps/web\"",
+    "dev:api": "npm run dev --prefix apps/api",
+    "dev:web": "npm run dev --prefix apps/web",
+    "build:api": "npm run build --prefix apps/api",
+    "build:web": "npm run build --prefix apps/web",
+    "db:migrate": "npm run prisma:migrate --prefix apps/api",
+    "db:seed": "npm run prisma:seed --prefix apps/api",
+    "db:studio": "npm run prisma:studio --prefix apps/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

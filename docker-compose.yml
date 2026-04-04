@@ -31,7 +31,7 @@ services:
       JWT_EXPIRES_IN: 7d
       OPENWEATHERMAP_API_KEY: ${OPENWEATHERMAP_API_KEY:-your_api_key_here}
       PORT: 3001
-      CORS_ORIGIN: http://localhost:3000
+      CORS_ORIGIN: http://localhost:3000,http://localhost:8081
       NODE_ENV: production
     ports:
       - '3001:3001'

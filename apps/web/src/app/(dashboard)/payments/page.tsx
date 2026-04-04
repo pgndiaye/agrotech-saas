@@ -281,6 +281,7 @@ export default function PaymentsPage() {
               'Tout du plan Gratuit',
               'Marketplace illimité',
               'Finance avancée + exports',
+              'IA Conseils agricoles',
               'Multi-utilisateurs',
               'Support prioritaire',
               'Intégration Wave & Orange Money',

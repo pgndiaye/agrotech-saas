@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { marketplaceApi } from '@/lib/api';
-import { Plus, ShoppingBag, X, CheckCircle, Trash2, Store } from 'lucide-react';
+import { Plus, ShoppingBag, X, CheckCircle, Trash2, Store, Lock } from 'lucide-react';
 
 const CATEGORY_LABELS: Record<string, string> = {
   SEEDS: '🌱 Semences',
@@ -95,6 +97,9 @@ function CreateListingModal({ onClose, onSaved }: { onClose: () => void; onSaved
 }
 
 export default function MarketplacePage() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const isPremium = user?.tenant?.plan === 'PREMIUM';
   const [listings, setListings] = useState<any[]>([]);
   const [myListings, setMyListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,10 +138,17 @@ export default function MarketplacePage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Marketplace</h1>
-        <button onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-primary-700 transition">
-          <Plus size={16} /> Publier une annonce
-        </button>
+        {isPremium ? (
+          <button onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-primary-700 transition">
+            <Plus size={16} /> Publier une annonce
+          </button>
+        ) : (
+          <button onClick={() => router.push('/payments')}
+            className="flex items-center gap-2 bg-gray-100 text-gray-500 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-200 transition border border-gray-200">
+            <Lock size={14} /> Publier une annonce
+          </button>
+        )}
       </div>
 
       {/* Onglets */}
@@ -219,7 +231,7 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {showModal && <CreateListingModal onClose={() => setShowModal(false)} onSaved={fetchData} />}
+      {showModal && isPremium && <CreateListingModal onClose={() => setShowModal(false)} onSaved={fetchData} />}
     </div>
   );
 }

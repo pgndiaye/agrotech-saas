@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import {
-  LayoutDashboard, Package, TrendingUp, ShoppingBag, LogOut, Leaf, Menu, X, CreditCard,
+  LayoutDashboard, Package, TrendingUp, ShoppingBag, LogOut, Leaf, Menu, X, CreditCard, Brain, Lock, Bell,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import clsx from 'clsx';
@@ -93,6 +93,60 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {label}
             </Link>
           ))}
+
+          {/* IA Conseils — Premium uniquement */}
+          {user.tenant?.plan === 'PREMIUM' ? (
+            <Link
+              href="/recommendations"
+              onClick={() => setSidebarOpen(false)}
+              className={clsx(
+                'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition',
+                pathname === '/recommendations'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-primary-200 hover:bg-primary-700 hover:text-white',
+              )}
+            >
+              <Brain size={18} />
+              IA Conseils
+            </Link>
+          ) : (
+            <Link
+              href="/payments"
+              onClick={() => setSidebarOpen(false)}
+              className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-primary-400 hover:bg-primary-700 hover:text-white transition"
+            >
+              <Brain size={18} />
+              IA Conseils
+              <Lock size={13} className="ml-auto opacity-60" />
+            </Link>
+          )}
+
+          {/* Alertes SMS — Premium uniquement */}
+          {user.tenant?.plan === 'PREMIUM' ? (
+            <Link
+              href="/alerts"
+              onClick={() => setSidebarOpen(false)}
+              className={clsx(
+                'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition',
+                pathname === '/alerts'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-primary-200 hover:bg-primary-700 hover:text-white',
+              )}
+            >
+              <Bell size={18} />
+              Alertes SMS
+            </Link>
+          ) : (
+            <Link
+              href="/payments"
+              onClick={() => setSidebarOpen(false)}
+              className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-primary-400 hover:bg-primary-700 hover:text-white transition"
+            >
+              <Bell size={18} />
+              Alertes SMS
+              <Lock size={13} className="ml-auto opacity-60" />
+            </Link>
+          )}
         </nav>
 
         <div className="p-4 border-t border-primary-700">

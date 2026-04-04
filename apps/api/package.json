@@ -6,16 +6,16 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "node ../../node_modules/@nestjs/cli/bin/nest.js build",
+    "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",
-    "start": "node ../../node_modules/@nestjs/cli/bin/nest.js start",
-    "dev": "node ../../node_modules/@nestjs/cli/bin/nest.js start --watch",
-    "start:debug": "node ../../node_modules/@nestjs/cli/bin/nest.js start --debug --watch",
+    "start": "nest start",
+    "dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "prisma:generate": "node ../../node_modules/.bin/prisma generate",
-    "prisma:migrate": "node ../../node_modules/.bin/prisma migrate dev",
-    "prisma:studio": "node ../../node_modules/.bin/prisma studio",
-    "prisma:seed": "node ../../node_modules/.bin/ts-node prisma/seed.ts"
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
@@ -49,6 +49,6 @@
     "@types/pg": "^8.0.0",
     "prisma": "^7.6.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "typescript": "^6.0.2"
   }
 }

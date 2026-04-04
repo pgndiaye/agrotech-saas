@@ -56,7 +56,8 @@ export class WeatherService {
         alerts: this.generateAgroAlerts(d),
       };
     } catch (err) {
-      this.logger.warn(`Météo API indisponible, utilisation des données simulées: ${err.message}`);
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Météo API indisponible, utilisation des données simulées: ${message}`);
       return this.getMockWeather(city);
     }
   }

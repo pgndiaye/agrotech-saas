@@ -18,12 +18,14 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users        User[]
-  stocks       Stock[]
-  transactions Transaction[]
-  listings     Listing[]
-  subscription Subscription?
-  payments     Payment[]
+  users          User[]
+  stocks         Stock[]
+  transactions   Transaction[]
+  listings       Listing[]
+  subscription   Subscription?
+  payments       Payment[]
+  smsAlertConfig SmsAlertConfig?
+  smsLogs        SmsLog[]
 }
 
 enum Plan {
@@ -190,4 +192,50 @@ enum PaymentStatus {
   SUCCEEDED
   FAILED
   CANCELLED
+}
+
+// ─── SMS Alertes (Phase 5) ─────────────────────────────────────────────────
+model SmsAlertConfig {
+  id             String   @id @default(cuid())
+  tenantId       String   @unique
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enabled        Boolean  @default(true)
+  phoneNumber    String
+  city           String   @default("Dakar")
+  stockAlerts    Boolean  @default(true)
+  weatherAlerts  Boolean  @default(true)
+  financeAlerts  Boolean  @default(true)
+  weeklyDigest   Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model SmsLog {
+  id          String       @id @default(cuid())
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  phoneNumber String
+  message     String
+  type        SmsAlertType
+  status      SmsStatus
+  provider    String?
+  externalId  String?
+  error       String?
+  createdAt   DateTime     @default(now())
+}
+
+enum SmsAlertType {
+  STOCK_CRITICAL
+  STOCK_LOW
+  WEATHER_ALERT
+  FINANCE_ALERT
+  WEEKLY_DIGEST
+  TEST
+}
+
+enum SmsStatus {
+  PENDING
+  SENT
+  FAILED
+  SIMULATED
 }

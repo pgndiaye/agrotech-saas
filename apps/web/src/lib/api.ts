@@ -77,4 +77,25 @@ export const paymentsApi = {
     api.post(`/payments/simulate-confirm/${paymentId}`),
 };
 
+export const aiApi = {
+  getRecommendations: (city?: string) =>
+    api.get('/ai/recommendations', { params: city ? { city } : {} }),
+};
+
+export const smsApi = {
+  getConfig: () => api.get('/sms/config'),
+  upsertConfig: (data: {
+    phoneNumber: string;
+    enabled?: boolean;
+    city?: string;
+    stockAlerts?: boolean;
+    weatherAlerts?: boolean;
+    financeAlerts?: boolean;
+    weeklyDigest?: boolean;
+  }) => api.put('/sms/config', data),
+  sendTestSms: () => api.post('/sms/test'),
+  triggerAlerts: () => api.post('/sms/trigger'),
+  getLogs: () => api.get('/sms/logs'),
+};
+
 export default api;

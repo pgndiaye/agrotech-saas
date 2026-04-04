@@ -16,8 +16,17 @@ async function bootstrap() {
     }),
   );
 
+  const isProd = process.env.NODE_ENV === 'production';
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : ['http://localhost:3000', 'http://localhost:8081'];
+
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: isProd
+      ? allowedOrigins
+      : (origin, callback) => callback(null, true),
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
   });
 

@@ -1,6 +1,4 @@
-FROM node:22-alpine AS builder
-# Upgrade npm → picomatch@4.0.4 (corrige CVE HIGH picomatch@4.0.3)
-RUN npm install -g npm@latest
+FROM alpine:3.22 AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -8,7 +6,7 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:22-alpine AS production
+FROM alpine:3.22 AS production
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 WORKDIR /app
 COPY package*.json ./
@@ -23,7 +21,9 @@ RUN npm ci --omit=dev && \
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
-RUN chown -R appuser:appgroup /app
+COPY prisma.config.js ./prisma.config.js
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x entrypoint.sh && chown -R appuser:appgroup /app
 USER appuser
 EXPOSE 3001
-CMD ["node", "dist/main"]
+ENTRYPOINT ["./entrypoint.sh"]

@@ -11,6 +11,7 @@ import { MarketplaceModule } from './marketplace/marketplace.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AiModule } from './ai/ai.module';
 import { SmsModule } from './sms/sms.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { SmsModule } from './sms/sms.module';
     PaymentsModule,
     AiModule,
     SmsModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

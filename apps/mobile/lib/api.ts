@@ -1,11 +1,19 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { Platform } from 'react-native';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+// Sur Android émulateur, 10.0.2.2 est l'alias de la machine hôte.
+// Sur iOS simulateur et device physique, utiliser l'IP réelle ou localhost.
+const DEFAULT_HOST =
+  Platform.OS === 'android' ? 'http://10.0.2.2:3001/api/v1' : 'http://localhost:3001/api/v1';
+
+const rawUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+const API_URL = rawUrl || DEFAULT_HOST;
 
 const api = axios.create({
   baseURL: API_URL,
   headers: { 'Content-Type': 'application/json' },
+  timeout: 10000, // 10 s — évite de rester bloqué si l'API est injoignable
 });
 
 let onUnauthorizedCallback: (() => void) | null = null;
@@ -29,6 +37,14 @@ api.interceptors.response.use(
       await AsyncStorage.removeItem('agrotech_token');
       await AsyncStorage.removeItem('agrotech_user');
       onUnauthorizedCallback?.();
+    }
+    // Erreur réseau (pas de réponse du serveur)
+    if (!error.response) {
+      const networkError = new Error(
+        `Serveur inaccessible. Vérifiez que l'API tourne sur ${API_URL}`,
+      );
+      (networkError as any).isNetworkError = true;
+      return Promise.reject(networkError);
     }
     return Promise.reject(error);
   },
@@ -104,6 +120,26 @@ export const smsApi = {
   sendTestSms: () => api.post('/sms/test'),
   triggerAlerts: () => api.post('/sms/trigger'),
   getLogs: () => api.get('/sms/logs'),
+};
+
+export const adminApi = {
+  getStats: () => api.get('/admin/stats'),
+  getActivity: () => api.get('/admin/activity'),
+
+  getTenants: (page = 1, limit = 20) =>
+    api.get('/admin/tenants', { params: { page, limit } }),
+  updateTenant: (id: string, data: { plan: 'FREE' | 'PREMIUM' }) =>
+    api.patch(`/admin/tenants/${id}`, data),
+  deleteTenant: (id: string) => api.delete(`/admin/tenants/${id}`),
+
+  getUsers: (page = 1, limit = 20, search?: string) =>
+    api.get('/admin/users', { params: { page, limit, search } }),
+  updateUser: (id: string, data: { role: string }) =>
+    api.patch(`/admin/users/${id}`, data),
+  deleteUser: (id: string) => api.delete(`/admin/users/${id}`),
+
+  getPayments: (page = 1, limit = 20) =>
+    api.get('/admin/payments', { params: { page, limit } }),
 };
 
 export default api;

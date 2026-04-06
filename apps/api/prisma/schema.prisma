@@ -48,6 +48,7 @@ model User {
 }
 
 enum Role {
+  SUPER_ADMIN
   ADMIN
   MANAGER
   FARMER

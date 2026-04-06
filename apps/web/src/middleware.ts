@@ -11,7 +11,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (!token && pathname.startsWith('/dashboard')) {
+  if (!token && (pathname.startsWith('/dashboard') || pathname.startsWith('/admin'))) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
@@ -19,5 +19,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/stocks/:path*', '/finance/:path*', '/marketplace/:path*'],
+  matcher: ['/dashboard/:path*', '/stocks/:path*', '/finance/:path*', '/marketplace/:path*', '/admin/:path*'],
 };

@@ -105,6 +105,33 @@ async function main() {
   console.log('✅ Seed terminé !');
   console.log(`Tenant: ${tenant.name} (slug: ${tenant.slug})`);
   console.log(`Admin: ${admin.email} / Admin1234!`);
+
+  // ─── Super Admin de la plateforme ──────────────────────────────────────────
+  // Tenant système (non visible dans les coopératives)
+  const systemTenant = await prisma.tenant.upsert({
+    where: { slug: 'agrotech-system' },
+    update: {},
+    create: {
+      name: 'AgroTech SN — System',
+      slug: 'agrotech-system',
+      plan: 'PREMIUM',
+    },
+  });
+
+  const superAdminPassword = await bcrypt.hash('SuperAdmin2026!', 10);
+  const superAdmin = await prisma.user.upsert({
+    where: { email: 'superadmin@agrotech.sn' },
+    update: {},
+    create: {
+      email: 'superadmin@agrotech.sn',
+      passwordHash: superAdminPassword,
+      name: 'Super Administrateur',
+      role: Role.SUPER_ADMIN,
+      tenantId: systemTenant.id,
+    },
+  });
+
+  console.log(`Super Admin: ${superAdmin.email} / SuperAdmin2026!`);
 }
 
 main()

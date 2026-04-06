@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import {
-  LayoutDashboard, Package, TrendingUp, ShoppingBag, LogOut, Leaf, Menu, X, CreditCard, Brain, Lock, Bell,
+  LayoutDashboard, Package, TrendingUp, ShoppingBag, LogOut, Leaf, Menu, X, CreditCard, Brain, Lock, Bell, ShieldCheck,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import clsx from 'clsx';
@@ -21,6 +21,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Les routes /admin ont leur propre layout — passer directement les enfants
+  if (pathname.startsWith('/admin')) {
+    return <>{children}</>;
+  }
 
   // Toujours synchroniser le plan depuis l'API au montage
   useEffect(() => { refreshUser(); }, []);
@@ -145,6 +150,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Bell size={18} />
               Alertes SMS
               <Lock size={13} className="ml-auto opacity-60" />
+            </Link>
+          )}
+
+          {/* Admin Panel — Super Admin uniquement */}
+          {user.role === 'SUPER_ADMIN' && (
+            <Link
+              href="/admin"
+              onClick={() => setSidebarOpen(false)}
+              className={clsx(
+                'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition mt-2 border',
+                pathname.startsWith('/admin')
+                  ? 'bg-red-600/20 text-red-300 border-red-600/30'
+                  : 'text-red-400 border-red-800/40 hover:bg-red-900/20 hover:text-red-300',
+              )}
+            >
+              <ShieldCheck size={18} />
+              Admin Plateforme
             </Link>
           )}
         </nav>

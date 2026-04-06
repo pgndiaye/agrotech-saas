@@ -98,4 +98,25 @@ export const smsApi = {
   getLogs: () => api.get('/sms/logs'),
 };
 
+export const adminApi = {
+  getStats: () => api.get('/admin/stats'),
+  getActivity: () => api.get('/admin/activity'),
+
+  getTenants: (page = 1, limit = 20) =>
+    api.get('/admin/tenants', { params: { page, limit } }),
+  getTenant: (id: string) => api.get(`/admin/tenants/${id}`),
+  updateTenant: (id: string, data: { name?: string; plan?: 'FREE' | 'PREMIUM' }) =>
+    api.patch(`/admin/tenants/${id}`, data),
+  deleteTenant: (id: string) => api.delete(`/admin/tenants/${id}`),
+
+  getUsers: (page = 1, limit = 20, search?: string) =>
+    api.get('/admin/users', { params: { page, limit, search } }),
+  updateUser: (id: string, data: { role: string }) =>
+    api.patch(`/admin/users/${id}`, data),
+  deleteUser: (id: string) => api.delete(`/admin/users/${id}`),
+
+  getPayments: (page = 1, limit = 20) =>
+    api.get('/admin/payments', { params: { page, limit } }),
+};
+
 export default api;

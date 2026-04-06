@@ -86,6 +86,17 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: 'Admin',
+          href: user?.role === 'SUPER_ADMIN' ? undefined : null,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="shield-checkmark-outline" size={size} color={color} />
+          ),
+          tabBarActiveTintColor: '#dc2626',
+        }}
+      />
     </Tabs>
   );
 }

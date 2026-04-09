@@ -10,7 +10,10 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.agrotech.sn"
+      "bundleIdentifier": "com.agrotech.sn",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -29,6 +32,18 @@
     "experiments": {
       "typedRoutes": true
     },
-    "scheme": "agrotech"
+    "scheme": "agrotech",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "77ec9135-f52d-4452-8429-ed31cfd7cc6e"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/77ec9135-f52d-4452-8429-ed31cfd7cc6e"
+    }
   }
 }

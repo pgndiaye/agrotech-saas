@@ -6,3 +6,4 @@ dist/
 prisma/migrations/
 coverage/
 .expo/
+apps/mobile

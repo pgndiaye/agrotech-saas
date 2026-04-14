@@ -25,6 +25,8 @@ export class SmsService {
         'AT_API_KEY absente ou invalide — envoi SMS simulé actif. ' +
         'Obtenez une clé sur https://africastalking.com',
       );
+    } else if (this.atUsername === 'sandbox') {
+      this.logger.warn('Mode SANDBOX AfricasTalking actif — les SMS ne sont PAS envoyés aux vrais numéros.');
     }
   }
 
@@ -166,8 +168,10 @@ export class SmsService {
 
     // Finance
     if (config.financeAlerts) {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const transactions = await this.prisma.transaction.findMany({
-        where: { tenantId: config.tenantId },
+        where: { tenantId: config.tenantId, createdAt: { gte: thirtyDaysAgo } },
       });
       const income = transactions.filter((t) => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0);
       const expense = transactions.filter((t) => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
@@ -251,32 +255,53 @@ export class SmsService {
     phoneNumber: string,
     message: string,
   ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    const isSandbox = this.atUsername === 'sandbox';
+    const baseUrl = isSandbox
+      ? 'https://api.sandbox.africastalking.com/version1/messaging'
+      : 'https://api.africastalking.com/version1/messaging';
+
     const params = new URLSearchParams({
       username: this.atUsername,
       to: phoneNumber,
       message,
     });
 
-    const response = await axios.post(
-      'https://api.africastalking.com/version1/messaging',
-      params.toString(),
-      {
-        headers: {
-          apiKey: this.atApiKey,
-          Accept: 'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded',
+    try {
+      const response = await axios.post(
+        baseUrl,
+        params.toString(),
+        {
+          headers: {
+            apiKey: this.atApiKey,
+            Accept: 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          timeout: 8_000,
         },
-        timeout: 8_000,
-      },
-    );
+      );
 
-    const recipients = response.data?.SMSMessageData?.Recipients ?? [];
-    if (recipients.length === 0) {
-      return { success: false, error: 'Aucun destinataire confirmé' };
+      const recipients = response.data?.SMSMessageData?.Recipients ?? [];
+      if (recipients.length === 0) {
+        return { success: false, error: 'Aucun destinataire confirmé' };
+      }
+      const recipient = recipients[0];
+      const success = recipient.status === 'Success' || recipient.statusCode === 101;
+      return { success, messageId: recipient.messageId, error: success ? undefined : recipient.status };
+    } catch (err: any) {
+      const status: number | undefined = err?.response?.status;
+      if (status === 401) {
+        const hint =
+          'Credentials AfricasTalking invalides (401). ' +
+          'Vérifiez AT_API_KEY et que AT_USERNAME est bien le nom du compte AT ' +
+          '(pas l\'adresse e-mail) — visible dans Settings > Account du dashboard AfricasTalking.';
+        this.logger.error(hint);
+        return { success: false, error: hint };
+      }
+      if (status === 403) {
+        return { success: false, error: 'Accès refusé AfricasTalking (403) — compte suspendu ou non activé.' };
+      }
+      throw err; // reraise les autres erreurs réseau
     }
-    const recipient = recipients[0];
-    const success = recipient.status === 'Success' || recipient.statusCode === 101;
-    return { success, messageId: recipient.messageId, error: success ? undefined : recipient.status };
   }
 
   private async sendSimulated(phoneNumber: string, message: string): Promise<void> {

@@ -1,4 +1,4 @@
-FROM alpine:3.22 AS builder
+FROM node:22-alpine3.22 AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -6,7 +6,7 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-FROM alpine:3.22 AS production
+FROM node:22-alpine3.22 AS production
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 WORKDIR /app
 COPY package*.json ./

@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { stocksApi } from '@/lib/api';
 import { Plus, Package, AlertTriangle, ArrowUp, ArrowDown, Trash2, X } from 'lucide-react';
+import { useToast } from '@/context/ToastContext';
+import { ConfirmDialog } from '@/components/ui/Modal';
 
 const CATEGORY_LABELS: Record<string, string> = {
   SEEDS: '🌱 Semences',
@@ -159,6 +161,9 @@ function MovementModal({ stock, onClose, onSaved }: { stock: any; onClose: () =>
 }
 
 export default function StocksPage() {
+  const toast = useToast();
+  const [aSupprimer, setASupprimer] = useState<string | null>(null);
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false);
   const [stocks, setStocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -176,16 +181,38 @@ export default function StocksPage() {
 
   useEffect(() => { fetchStocks(); }, []);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Supprimer ce stock ?')) return;
-    await stocksApi.delete(id);
-    fetchStocks();
+  // Ouvre la modale de confirmation ; la suppression est faite par confirmerSuppression.
+  const handleDelete = (id: string) => setASupprimer(id);
+
+  const confirmerSuppression = async () => {
+    if (!aSupprimer) return;
+    setSuppressionEnCours(true);
+    try {
+      await stocksApi.delete(aSupprimer);
+      toast.succes('Stock supprimé');
+      setASupprimer(null);
+      fetchStocks();
+    } catch (err: any) {
+      toast.erreur(err.response?.data?.message ?? 'Erreur lors de la suppression');
+    } finally {
+      setSuppressionEnCours(false);
+    }
   };
 
   const filtered = filter === 'ALL' ? stocks : stocks.filter(s => s.category === filter);
 
   return (
     <div className="space-y-5">
+      {aSupprimer && (
+        <ConfirmDialog
+          titre="Supprimer le stock"
+          message="Ce stock et son historique de mouvements seront définitivement supprimés."
+          libelleConfirmation="Supprimer"
+          enCours={suppressionEnCours}
+          onCancel={() => setASupprimer(null)}
+          onConfirm={confirmerSuppression}
+        />
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Gestion des Stocks</h1>
         <button onClick={() => setShowAddModal(true)}

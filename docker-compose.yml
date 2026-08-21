@@ -31,6 +31,26 @@ services:
       PORT: 3001
       CORS_ORIGIN: http://localhost:3000,http://localhost:8081
       NODE_ENV: production
+      # URLs utilisées pour construire les liens de retour et de notification
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      API_URL: ${API_URL:-http://localhost:3001/api/v1}
+      # Paiements — sans ces variables, les intégrations restent en mode dégradé
+      PAYMENT_SIMULATION_MODE: ${PAYMENT_SIMULATION_MODE:-true}
+      WAVE_API_KEY: ${WAVE_API_KEY:-}
+      WAVE_WEBHOOK_SECRET: ${WAVE_WEBHOOK_SECRET:-}
+      ORANGE_MONEY_CLIENT_ID: ${ORANGE_MONEY_CLIENT_ID:-}
+      ORANGE_MONEY_CLIENT_SECRET: ${ORANGE_MONEY_CLIENT_SECRET:-}
+      ORANGE_MONEY_MERCHANT_KEY: ${ORANGE_MONEY_MERCHANT_KEY:-}
+      ORANGE_WEBHOOK_SECRET: ${ORANGE_WEBHOOK_SECRET:-}
+      # SMS — sans clé, les envois sont journalisés avec le statut SIMULATED
+      AT_USERNAME: ${AT_USERNAME:-}
+      AT_API_KEY: ${AT_API_KEY:-}
+      # IA — sans clé, seul le moteur heuristique est utilisé
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Swagger : protégé par Basic Auth dès que ces deux variables sont posées
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      SWAGGER_USER: ${SWAGGER_USER:-}
+      SWAGGER_PASSWORD: ${SWAGGER_PASSWORD:-}
     ports:
       - '3001:3001'
     depends_on:
@@ -46,6 +66,10 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
       NODE_ENV: production
+      # Le middleware Edge vérifie la signature du JWT pour protéger /admin.
+      # Variable serveur uniquement — surtout pas de préfixe NEXT_PUBLIC_.
+      # Doit être identique à celle de l'API.
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production-super-secret}
     ports:
       - '3000:3000'
     depends_on:

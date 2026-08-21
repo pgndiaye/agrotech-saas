@@ -15,4 +15,28 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Entrée des notifications (ToastProvider). Aucun plugin d'animation n'est
+     installé, la keyframe est donc définie ici. */
+  .animate-in {
+    animation: toast-entree 180ms ease-out;
+  }
+}
+
+@keyframes toast-entree {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Respecte le réglage système de réduction des animations. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in {
+    animation: none;
+  }
 }

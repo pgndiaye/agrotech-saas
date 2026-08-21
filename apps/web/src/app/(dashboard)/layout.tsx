@@ -22,13 +22,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Tous les hooks doivent être appelés avant les retours anticipés ci-dessous,
+  // sinon le nombre de hooks varie d'un rendu à l'autre (erreur React #310).
+
+  // Toujours synchroniser le plan depuis l'API au montage
+  useEffect(() => { refreshUser(); }, []);
+
+  // Redirection hors rendu : appeler router.replace() pendant le rendu
+  // met à jour le routeur au milieu du rendu du layout.
+  useEffect(() => {
+    if (!loading && !user) router.replace('/login');
+  }, [loading, user, router]);
+
   // Les routes /admin ont leur propre layout — passer directement les enfants
   if (pathname.startsWith('/admin')) {
     return <>{children}</>;
   }
-
-  // Toujours synchroniser le plan depuis l'API au montage
-  useEffect(() => { refreshUser(); }, []);
 
   const handleLogout = () => {
     logout();
@@ -44,7 +53,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   if (!user) {
-    router.replace('/login');
+    // La redirection est déclenchée par le useEffect ci-dessus
     return null;
   }
 

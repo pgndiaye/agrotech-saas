@@ -38,8 +38,8 @@ export class SmsService {
     return this.prisma.smsAlertConfig.findUnique({ where: { tenantId } });
   }
 
+  // Contrôle du plan assuré en amont par @RequireFeature('smsAlerts')
   async upsertConfig(dto: UpsertSmsConfigDto, tenantId: string) {
-    await this.requirePremium(tenantId);
     return this.prisma.smsAlertConfig.upsert({
       where: { tenantId },
       create: { tenantId, ...dto, enabled: dto.enabled ?? true, city: dto.city ?? 'Dakar' },
@@ -52,7 +52,6 @@ export class SmsService {
   // ──────────────────────────────────────────────────────────────────────────
 
   async sendTestSms(tenantId: string) {
-    await this.requirePremium(tenantId);
     const config = await this.prisma.smsAlertConfig.findUnique({ where: { tenantId } });
     if (!config) {
       throw new ForbiddenException('Aucune configuration SMS — veuillez configurer un numéro de téléphone');
@@ -62,18 +61,19 @@ export class SmsService {
   }
 
   async triggerAlertsForTenant(tenantId: string) {
-    await this.requirePremium(tenantId);
     const config = await this.prisma.smsAlertConfig.findUnique({ where: { tenantId } });
     if (!config || !config.enabled) return { sent: 0, skipped: true };
     return this.runAlertsForConfig(config);
   }
 
   async triggerAllAlerts() {
-    const configs = await this.prisma.smsAlertConfig.findMany({
-      where: { enabled: true },
-      include: { tenant: { select: { plan: true } } },
+    // Filtré en base : le planificateur n'a pas de contexte HTTP, donc pas de guard.
+    const premiumConfigs = await this.prisma.smsAlertConfig.findMany({
+      where: {
+        enabled: true,
+        tenant: { plan: 'PREMIUM', status: 'ACTIVE' },
+      },
     });
-    const premiumConfigs = configs.filter((c) => c.tenant.plan === 'PREMIUM');
     let totalSent = 0;
     for (const config of premiumConfigs) {
       try {
@@ -88,11 +88,13 @@ export class SmsService {
   }
 
   async triggerAllWeeklyDigests() {
-    const configs = await this.prisma.smsAlertConfig.findMany({
-      where: { enabled: true, weeklyDigest: true },
-      include: { tenant: { select: { plan: true } } },
+    const premiumConfigs = await this.prisma.smsAlertConfig.findMany({
+      where: {
+        enabled: true,
+        weeklyDigest: true,
+        tenant: { plan: 'PREMIUM', status: 'ACTIVE' },
+      },
     });
-    const premiumConfigs = configs.filter((c) => c.tenant.plan === 'PREMIUM');
     let totalSent = 0;
     for (const config of premiumConfigs) {
       try {
@@ -317,12 +319,5 @@ export class SmsService {
   private truncate(msg: string, maxLen = 160): string {
     if (msg.length <= maxLen) return msg;
     return msg.substring(0, maxLen - 1) + '…';
-  }
-
-  private async requirePremium(tenantId: string): Promise<void> {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant || tenant.plan !== 'PREMIUM') {
-      throw new ForbiddenException('Les alertes SMS sont réservées aux abonnés Premium');
-    }
   }
 }

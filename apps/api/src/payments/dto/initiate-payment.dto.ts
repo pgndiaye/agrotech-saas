@@ -1,4 +1,4 @@
-import { IsEnum, IsNumber, IsString, IsOptional, Min } from 'class-validator';
+import { IsEnum, IsString, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum PaymentProviderDto {
@@ -6,6 +6,7 @@ export enum PaymentProviderDto {
   ORANGE_MONEY = 'ORANGE_MONEY',
 }
 
+/** Plans facturables. FREE n'est pas payable, donc absent. */
 export enum PlanDto {
   PREMIUM = 'PREMIUM',
 }
@@ -15,10 +16,14 @@ export class InitiatePaymentDto {
   @IsEnum(PaymentProviderDto)
   provider: PaymentProviderDto;
 
-  @ApiProperty({ example: 2000, description: 'Montant en XOF' })
-  @IsNumber()
-  @Min(100)
-  amount: number;
+  /**
+   * Le client choisit un plan, jamais un montant : le prix est résolu côté
+   * serveur par PlanCatalogService. Auparavant `amount` était accepté tel quel,
+   * ce qui permettait d'obtenir PREMIUM pour 100 XOF.
+   */
+  @ApiProperty({ enum: PlanDto, example: PlanDto.PREMIUM })
+  @IsEnum(PlanDto)
+  planCode: PlanDto;
 
   @ApiPropertyOptional({ example: '+221771234567', description: 'Requis pour Orange Money' })
   @IsOptional()

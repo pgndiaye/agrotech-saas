@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 
@@ -24,11 +24,8 @@ export class MarketplaceService {
     });
   }
 
+  // Le contrôle du plan est fait en amont par @RequireFeature('marketplacePublish')
   async create(dto: CreateListingDto, tenantId: string) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant || tenant.plan !== 'PREMIUM') {
-      throw new ForbiddenException('La publication d\'annonces est réservée aux abonnés Premium');
-    }
     return this.prisma.listing.create({
       data: { ...dto, tenantId, category: dto.category as any },
     });

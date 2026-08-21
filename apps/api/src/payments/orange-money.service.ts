@@ -7,6 +7,12 @@ export interface OrangeMoneyTokenResponse {
   expires_in: number;
 }
 
+export interface OrangeMoneyTransactionStatus {
+  status: string; // INITIATED | PENDING | SUCCESS | SUCCESSFULL | FAILED | EXPIRED
+  txnid?: string;
+  amount?: number;
+}
+
 export interface OrangeMoneyPaymentRequest {
   notifToken: string;
   payToken: string;
@@ -98,5 +104,49 @@ export class OrangeMoneyService {
     }
 
     return response.json() as Promise<OrangeMoneyPaymentRequest>;
+  }
+
+  /**
+   * Interroge Orange sur l'état réel d'une transaction.
+   *
+   * Orange ne signant pas ses notifications, le payload du webhook n'est qu'un
+   * signal : c'est cette réponse qui fait foi avant d'activer un abonnement.
+   */
+  async getTransactionStatus(params: {
+    orderId: string;
+    amount: number;
+    payToken: string;
+  }): Promise<OrangeMoneyTransactionStatus> {
+    if (!this.clientId || !this.clientSecret || !this.merchantKey) {
+      throw new BadRequestException('Orange Money non configuré (variables manquantes)');
+    }
+
+    const token = await this.getAccessToken();
+
+    const response = await fetch(`${this.baseUrl}/transactionstatus`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        order_id: params.orderId,
+        amount: params.amount,
+        pay_token: params.payToken,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      this.logger.error(
+        `Orange Money statut transaction: ${response.status} ${error}`,
+      );
+      throw new BadRequestException(
+        `Erreur Orange Money: ${response.statusText}`,
+      );
+    }
+
+    return response.json() as Promise<OrangeMoneyTransactionStatus>;
   }
 }

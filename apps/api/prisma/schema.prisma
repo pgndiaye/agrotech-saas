@@ -18,6 +18,20 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Cycle de vie plateforme : la suspension bloque l'accès de tous les membres
+  // dès la requête suivante (contrôle dans JwtStrategy.validate).
+  status           TenantStatus @default(ACTIVE)
+  suspendedAt      DateTime?
+  suspendedReason  String?
+  suspendedBy      String?
+
+  // Fiche administrative, renseignée depuis la console
+  contactEmail String?
+  contactPhone String?
+  region       String?
+  notes        String?
+  trialEndsAt  DateTime?
+
   users          User[]
   stocks         Stock[]
   transactions   Transaction[]
@@ -25,12 +39,24 @@ model Tenant {
   subscription   Subscription?
   payments       Payment[]
   smsAlertConfig SmsAlertConfig?
-  smsLogs        SmsLog[]
+  smsLogs            SmsLog[]
+  auditLogs          AuditLog[]
+  subscriptionEvents SubscriptionEvent[]
+
+  @@index([status])
+  @@index([plan])
+  @@index([createdAt])
 }
 
 enum Plan {
   FREE
   PREMIUM
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
 }
 
 // ─── User ──────────────────────────────────────────────────────────────────
@@ -45,6 +71,18 @@ model User {
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  status          UserStatus @default(ACTIVE)
+  suspendedAt     DateTime?
+  suspendedReason String?
+  lastLoginAt     DateTime?
+  phone           String?
+  // Tout token émis avant cette date est refusé. Positionné lors d'un
+  // changement de rôle ou d'une suspension : révocation immédiate sans Redis.
+  tokensRevokedAt DateTime?
+
+  @@index([tenantId])
+  @@index([status])
 }
 
 enum Role {
@@ -52,6 +90,11 @@ enum Role {
   ADMIN
   MANAGER
   FARMER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
 }
 
 enum Language {
@@ -74,6 +117,8 @@ model Stock {
   updatedAt   DateTime    @updatedAt
 
   movements StockMovement[]
+
+  @@index([tenantId, category])
 }
 
 enum StockCategory {
@@ -92,6 +137,8 @@ model StockMovement {
   quantity  Float
   note      String?
   createdAt DateTime      @default(now())
+
+  @@index([stockId, createdAt])
 }
 
 enum MovementType {
@@ -112,6 +159,9 @@ model Transaction {
   tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+
+  @@index([tenantId, date])
+  @@index([tenantId, type])
 }
 
 enum TransactionType {
@@ -134,6 +184,9 @@ model Listing {
   tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+
+  @@index([status, createdAt])
+  @@index([tenantId])
 }
 
 enum ListingStatus {
@@ -149,12 +202,16 @@ model Subscription {
   tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   plan      Plan               @default(FREE)
   status    SubscriptionStatus @default(ACTIVE)
-  startDate DateTime           @default(now())
-  endDate   DateTime?
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  startDate   DateTime         @default(now())
+  endDate     DateTime?
+  autoRenew   Boolean          @default(false)
+  cancelledAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   payments Payment[]
+
+  @@index([status, endDate])
 }
 
 enum SubscriptionStatus {
@@ -175,12 +232,17 @@ model Payment {
   amount         Float
   currency       String          @default("XOF")
   status         PaymentStatus   @default(PENDING)
-  externalId     String?         // ID côté Wave ou Orange Money
+  // Unique : garantit l'idempotence si un webhook est rejoué par le provider
+  externalId     String?         @unique // ID côté Wave ou Orange Money
   checkoutUrl    String?         // URL de paiement Wave
   phoneNumber    String?         // Numéro pour Orange Money
+  planCode       Plan?           // Plan facturé, résolu côté serveur
   metadata       Json?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([status])
 }
 
 enum PaymentProvider {
@@ -223,6 +285,8 @@ model SmsLog {
   externalId  String?
   error       String?
   createdAt   DateTime     @default(now())
+
+  @@index([tenantId, createdAt])
 }
 
 enum SmsAlertType {
@@ -239,4 +303,124 @@ enum SmsStatus {
   SENT
   FAILED
   SIMULATED
+}
+
+// ─── Journal d'audit des actions d'administration ──────────────────────────
+// Écrit par l'AuditInterceptor (actions SUPER_ADMIN) et par AuditService.log()
+// pour les actions système (expiration d'abonnement, webhooks).
+// Seules les mutations sont journalisées : un handler sans @Audit() n'écrit rien.
+model AuditLog {
+  id             String      @id @default(cuid())
+  actorId        String?
+  actorEmail     String?
+  actorRole      String      // SUPER_ADMIN | SYSTEM
+  action         String      // TENANT_SUSPENDU, USER_ROLE_MODIFIE, …
+  entity         String      // tenant | user | payment | planConfig
+  entityId       String?
+  targetTenantId String?
+  targetTenant   Tenant?     @relation(fields: [targetTenantId], references: [id], onDelete: SetNull)
+  before         Json?
+  after          Json?
+  ip             String?
+  userAgent      String?
+  status         AuditStatus @default(SUCCESS)
+  errorMessage   String?
+  createdAt      DateTime    @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@index([action])
+  @@index([targetTenantId])
+}
+
+enum AuditStatus {
+  SUCCESS
+  FAILURE
+}
+
+// ─── Exécutions de tâches planifiées ───────────────────────────────────────
+// Deux rôles : déduplication PERSISTANTE (contrairement à l'état en mémoire
+// qui était perdu au redémarrage) et journal d'exécution consultable.
+// La contrainte d'unicité (taskName, runKey) est ce qui garantit qu'une même
+// occurrence n'est jouée qu'une fois, y compris avec plusieurs instances.
+model TaskRun {
+  id        String        @id @default(cuid())
+  taskName  String
+  runKey    String        // "2026-08-19" (quotidien) ou "2026-W34" (hebdo)
+  status    TaskRunStatus @default(RUNNING)
+  startedAt DateTime      @default(now())
+  endedAt   DateTime?
+  result    Json?
+  error     String?
+
+  @@unique([taskName, runKey])
+  @@index([taskName, startedAt])
+}
+
+enum TaskRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+// ─── Catalogue tarifaire ───────────────────────────────────────────────────
+// Cohabite avec l'enum `Plan` : celui-ci reste le discriminant typé de
+// Tenant.plan et Subscription.plan, PlanConfig porte le prix, les quotas et
+// les fonctionnalités. Une ligne par membre de l'enum (garanti par le seed).
+model PlanConfig {
+  id            String        @id @default(cuid())
+  code          Plan          @unique
+  label         String
+  description   String?
+  // Entier : jamais de flottant pour de la monnaie.
+  priceXof      Int           @default(0)
+  billingPeriod BillingPeriod @default(MONTHLY)
+  isActive      Boolean       @default(true)
+  isPublic      Boolean       @default(true)
+  sortOrder     Int           @default(0)
+  // { users, stocks, listings, smsPerMonth } — la valeur -1 signifie illimité
+  quotas        Json          @default("{}")
+  // { exportCsv, smsAlerts, marketplacePublish, aiRecommendations }
+  features      Json          @default("{}")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+enum BillingPeriod {
+  MONTHLY
+  YEARLY
+}
+
+// ─── Historique des abonnements ────────────────────────────────────────────
+// `Subscription` ne conserve que l'état courant : sans cet historique, le
+// churn et le taux de conversion sont incalculables.
+model SubscriptionEvent {
+  id             String                @id @default(cuid())
+  tenantId       String
+  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  type           SubscriptionEventType
+  fromPlan       Plan?
+  toPlan         Plan?
+  amountXof      Int?
+  source         String                // WEBHOOK | ADMIN | SYSTEM | SIMULATION
+  occurredAt     DateTime              @default(now())
+  metadata       Json?
+
+  @@index([occurredAt])
+  @@index([tenantId, occurredAt])
+  @@index([type, occurredAt])
+}
+
+enum SubscriptionEventType {
+  CREATED
+  RENEWED
+  UPGRADED
+  DOWNGRADED
+  EXPIRED
+  CANCELLED
+  REACTIVATED
 }

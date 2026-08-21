@@ -1,279 +1,497 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { adminApi } from '@/lib/api';
 import {
-  Users, Search, ChevronLeft, ChevronRight, Pencil, Trash2, Check, X, AlertCircle,
+  Users,
+  Pencil,
+  Trash2,
+  Check,
+  X,
+  AlertCircle,
+  Ban,
+  RotateCcw,
+  Plus,
+  Download,
+  ArrowRightLeft,
 } from 'lucide-react';
+import { usePaginatedResource } from '@/hooks/usePaginatedResource';
+import { useDebounce } from '@/hooks/useDebounce';
+import { DataTable, Pagination, type Colonne } from '@/components/ui/DataTable';
+import { ConfirmDialog, Modal } from '@/components/ui/Modal';
+import { Bouton, Champ, MessageErreur, Selecteur } from '@/components/ui/primitives';
+import {
+  AdminPageHeader,
+  CelluleIdentite,
+  PlanBadge,
+  RoleBadge,
+  StatutCompteBadge,
+} from '@/components/admin';
+import { AdminFilters, EnteteTriable } from '@/components/admin/AdminFilters';
+import { UserForm, type ValeursUser } from '@/components/admin/UserForm';
+import { formatDate } from '@/lib/format';
+import { telechargerBlob, nomFichierDate } from '@/lib/telechargement';
+import { useToast } from '@/context/ToastContext';
 
 interface PlatformUser {
   id: string;
   email: string;
   name: string;
   role: string;
-  language: string;
+  status: 'ACTIVE' | 'SUSPENDED';
   createdAt: string;
+  lastLoginAt?: string | null;
   tenant: { id: string; name: string; slug: string; plan: string };
 }
 
 const ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'FARMER'];
 
-const ROLE_COLORS: Record<string, string> = {
-  SUPER_ADMIN: 'bg-red-600/20 text-red-300',
-  ADMIN: 'bg-blue-600/20 text-blue-300',
-  MANAGER: 'bg-purple-600/20 text-purple-300',
-  FARMER: 'bg-green-600/20 text-green-300',
-};
+const FILTRES = [
+  {
+    cle: 'role',
+    label: 'Tous les rôles',
+    options: [
+      { valeur: 'SUPER_ADMIN', label: 'Super admin' },
+      { valeur: 'ADMIN', label: 'Admin' },
+      { valeur: 'MANAGER', label: 'Gestionnaire' },
+      { valeur: 'FARMER', label: 'Agriculteur' },
+    ],
+  },
+  {
+    cle: 'status',
+    label: 'Tous les statuts',
+    options: [
+      { valeur: 'ACTIVE', label: 'Actifs' },
+      { valeur: 'SUSPENDED', label: 'Suspendus' },
+    ],
+  },
+];
 
 export default function AdminUsersPage() {
-  const [users, setUsers] = useState<PlatformUser[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editRole, setEditRole] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const toast = useToast();
+  const router = useRouter();
 
-  const limit = 20;
+  const [saisie, setSaisie] = useState('');
+  const recherche = useDebounce(saisie, 400);
+  const [valeursFiltres, setValeursFiltres] = useState<Record<string, string>>({
+    role: '',
+    status: '',
+  });
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  const fetchUsers = useCallback(
-    (p: number, q: string) => {
-      setLoading(true);
-      adminApi
-        .getUsers(p, limit, q || undefined)
-        .then((res) => {
-          setUsers(res.data.data);
-          setTotal(res.data.total);
-        })
-        .catch(() => setError('Impossible de charger les utilisateurs'))
-        .finally(() => setLoading(false));
-    },
-    [],
+  const [editionId, setEditionId] = useState<string | null>(null);
+  const [roleEdite, setRoleEdite] = useState('');
+  const [enCours, setEnCours] = useState(false);
+  const [creation, setCreation] = useState(false);
+  const [aSupprimer, setASupprimer] = useState<PlatformUser | null>(null);
+  const [aSuspendre, setASuspendre] = useState<PlatformUser | null>(null);
+  const [aDeplacer, setADeplacer] = useState<PlatformUser | null>(null);
+  const [tenantCible, setTenantCible] = useState('');
+  const [tenants, setTenants] = useState<{ id: string; name: string; slug: string }[]>([]);
+  const [motif, setMotif] = useState('');
+
+  const charger = useCallback(
+    (page: number, limit: number) =>
+      adminApi.getUsers({
+        page,
+        limit,
+        search: recherche || undefined,
+        role: valeursFiltres.role || undefined,
+        status: valeursFiltres.status || undefined,
+        sortBy,
+        sortOrder,
+      }),
+    [recherche, valeursFiltres.role, valeursFiltres.status, sortBy, sortOrder],
   );
 
+  const { items, total, page, setPage, totalPages, loading, erreur, rafraichir } =
+    usePaginatedResource<PlatformUser>(charger, {
+      messageErreur: 'Impossible de charger les utilisateurs',
+    });
+
   useEffect(() => {
-    fetchUsers(page, search);
-  }, [page, search, fetchUsers]);
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
     setPage(1);
-    setSearch(searchInput);
+  }, [recherche, valeursFiltres.role, valeursFiltres.status, sortBy, sortOrder, setPage]);
+
+  // Chargé à l'ouverture de la modale de déplacement seulement.
+  const ouvrirDeplacement = async (u: PlatformUser) => {
+    setADeplacer(u);
+    setTenantCible('');
+    try {
+      const res = await adminApi.getTenants({ limit: 100, sortBy: 'name', sortOrder: 'asc' });
+      setTenants(res.data.data.filter((t: any) => t.id !== u.tenant?.id));
+    } catch {
+      setTenants([]);
+    }
   };
 
-  const handleUpdateRole = async (id: string) => {
-    setSaving(true);
+  const trier = (cle: string) => {
+    if (sortBy === cle) setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+    else {
+      setSortBy(cle);
+      setSortOrder('asc');
+    }
+  };
+
+  const majFiltre = (cle: string, valeur: string) =>
+    setValeursFiltres((p) => ({ ...p, [cle]: valeur }));
+
+  const agir = async (action: () => Promise<unknown>, succes: string) => {
+    setEnCours(true);
     try {
-      await adminApi.updateUser(id, { role: editRole });
-      setEditingId(null);
-      fetchUsers(page, search);
-    } catch {
-      alert('Erreur lors de la mise à jour du rôle');
+      await action();
+      toast.succes(succes);
+      await rafraichir();
+      return true;
+    } catch (err: any) {
+      toast.erreur(err.response?.data?.message ?? "Erreur lors de l'opération");
+      return false;
     } finally {
-      setSaving(false);
+      setEnCours(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const creer = async (v: ValeursUser) => {
+    const ok = await agir(
+      () =>
+        adminApi.createUser({
+          email: v.email,
+          name: v.name,
+          password: v.password,
+          role: v.role,
+          tenantId: v.tenantId,
+          phone: v.phone || undefined,
+        }),
+      `${v.name} créé`,
+    );
+    if (ok) setCreation(false);
+  };
+
+  const exporter = async () => {
     try {
-      await adminApi.deleteUser(id);
-      setDeleteConfirmId(null);
-      fetchUsers(page, search);
+      const res = await adminApi.exportUsersCsv({
+        search: recherche || undefined,
+        role: valeursFiltres.role || undefined,
+        status: valeursFiltres.status || undefined,
+        sortBy,
+        sortOrder,
+      });
+      telechargerBlob(res.data, nomFichierDate('utilisateurs'));
+      toast.succes('Export généré');
     } catch {
-      alert('Erreur lors de la suppression');
+      toast.erreur("Impossible de générer l'export");
     }
   };
 
-  const totalPages = Math.ceil(total / limit);
+  const entete = (label: string, cle: string) => (
+    <EnteteTriable label={label} cle={cle} sortBy={sortBy} sortOrder={sortOrder} onTri={trier} />
+  );
+
+  const colonnes: Colonne<PlatformUser>[] = [
+    {
+      cle: 'name',
+      entete: entete('Utilisateur', 'name'),
+      rendu: (u) => (
+        <CelluleIdentite
+          titre={u.name}
+          sousTitre={u.email}
+          couleurIcone="bg-indigo-600/20"
+          icone={
+            <span className="text-xs font-bold text-indigo-300">
+              {u.name?.charAt(0).toUpperCase()}
+            </span>
+          }
+        />
+      ),
+    },
+    {
+      cle: 'role',
+      entete: entete('Rôle', 'role'),
+      rendu: (u) =>
+        editionId === u.id ? (
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <Selecteur
+              ton="sombre"
+              value={roleEdite}
+              onChange={(e) => setRoleEdite(e.target.value)}
+              className="!py-1 text-xs"
+              aria-label="Rôle"
+            >
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </Selecteur>
+            <button
+              onClick={async () => {
+                const ok = await agir(
+                  () => adminApi.updateUser(u.id, { role: roleEdite }),
+                  `Rôle de ${u.name} modifié — sessions révoquées`,
+                );
+                if (ok) setEditionId(null);
+              }}
+              disabled={enCours}
+              aria-label="Enregistrer"
+              className="text-green-400 hover:text-green-300 disabled:opacity-50"
+            >
+              <Check size={15} />
+            </button>
+            <button
+              onClick={() => setEditionId(null)}
+              aria-label="Annuler"
+              className="text-gray-500 hover:text-white"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        ) : (
+          <RoleBadge role={u.role} />
+        ),
+    },
+    {
+      cle: 'status',
+      entete: entete('Statut', 'status'),
+      alignement: 'centre',
+      rendu: (u) => <StatutCompteBadge statut={u.status} />,
+    },
+    {
+      cle: 'tenant',
+      entete: 'Coopérative',
+      rendu: (u) => (
+        <div>
+          <p className="text-gray-200 text-xs">{u.tenant?.name ?? '—'}</p>
+          <p className="text-[11px] text-gray-500">{u.tenant?.slug}</p>
+        </div>
+      ),
+    },
+    {
+      cle: 'plan',
+      entete: 'Plan',
+      alignement: 'centre',
+      rendu: (u) => <PlanBadge plan={u.tenant?.plan} />,
+    },
+    {
+      cle: 'lastLoginAt',
+      entete: entete('Dernière connexion', 'lastLoginAt'),
+      className: 'text-gray-400 text-xs',
+      rendu: (u) => (u.lastLoginAt ? formatDate(u.lastLoginAt) : 'Jamais'),
+    },
+    {
+      cle: 'actions',
+      entete: 'Actions',
+      alignement: 'droite',
+      rendu: (u) => (
+        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => {
+              setEditionId(u.id);
+              setRoleEdite(u.role);
+            }}
+            title="Modifier le rôle"
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
+          >
+            <Pencil size={14} />
+          </button>
+          <button
+            onClick={() => ouvrirDeplacement(u)}
+            title="Changer de coopérative"
+            className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-lg transition"
+          >
+            <ArrowRightLeft size={14} />
+          </button>
+          {u.status === 'ACTIVE' ? (
+            <button
+              onClick={() => {
+                setASuspendre(u);
+                setMotif('');
+              }}
+              title="Suspendre"
+              className="p-1.5 text-gray-400 hover:text-orange-400 hover:bg-gray-700 rounded-lg transition"
+            >
+              <Ban size={14} />
+            </button>
+          ) : (
+            <button
+              onClick={() => agir(() => adminApi.reactivateUser(u.id), `${u.name} réactivé`)}
+              title="Réactiver"
+              className="p-1.5 text-gray-400 hover:text-green-400 hover:bg-gray-700 rounded-lg transition"
+            >
+              <RotateCcw size={14} />
+            </button>
+          )}
+          <button
+            onClick={() => setASupprimer(u)}
+            title="Supprimer"
+            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-lg transition"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div className="p-8 text-white">
-      <div className="flex items-start justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">Utilisateurs</h1>
-          <p className="text-gray-400 text-sm mt-1">{total} utilisateurs au total</p>
-        </div>
+      <AdminPageHeader
+        titre="Utilisateurs"
+        sousTitre={`${total} utilisateur${total > 1 ? 's' : ''} sur la plateforme`}
+      />
 
-        {/* Recherche */}
-        <form onSubmit={handleSearch} className="flex items-center gap-2">
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input
-              type="text"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Rechercher par nom ou email..."
-              className="pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-red-500 w-72"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-xl transition"
-          >
-            Chercher
-          </button>
-        </form>
-      </div>
+      <AdminFilters
+        recherche={saisie}
+        onRecherche={setSaisie}
+        placeholderRecherche="Rechercher par nom ou e-mail…"
+        filtres={FILTRES}
+        valeurs={valeursFiltres}
+        onFiltre={majFiltre}
+      >
+        <Bouton variante="secondaire" ton="sombre" onClick={exporter}>
+          <Download size={15} /> Exporter
+        </Bouton>
+        <Bouton ton="sombre" onClick={() => setCreation(true)}>
+          <Plus size={15} /> Nouvel utilisateur
+        </Bouton>
+      </AdminFilters>
 
-      {error && (
-        <div className="flex items-center gap-2 text-red-400 mb-6">
-          <AlertCircle size={18} /> {error}
-        </div>
+      <MessageErreur>
+        {erreur && (
+          <>
+            <AlertCircle size={18} /> {erreur}
+          </>
+        )}
+      </MessageErreur>
+
+      <DataTable
+        ton="sombre"
+        colonnes={colonnes}
+        lignes={items}
+        loading={loading}
+        messageVide={recherche ? `Aucun résultat pour « ${recherche} »` : 'Aucun utilisateur'}
+        iconeVide={<Users size={40} />}
+        onLigneClick={(u) => router.push(`/admin/users/${u.id}`)}
+      />
+
+      <Pagination
+        ton="sombre"
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        libelle="utilisateurs"
+        onChange={setPage}
+      />
+
+      {creation && <UserForm onSubmit={creer} onCancel={() => setCreation(false)} />}
+
+      {aSupprimer && (
+        <ConfirmDialog
+          ton="sombre"
+          titre="Supprimer l'utilisateur"
+          libelleConfirmation="Supprimer"
+          enCours={enCours}
+          onCancel={() => setASupprimer(null)}
+          onConfirm={async () => {
+            const ok = await agir(
+              () => adminApi.deleteUser(aSupprimer.id),
+              `${aSupprimer.name} supprimé`,
+            );
+            if (ok) setASupprimer(null);
+          }}
+          message={
+            <>
+              Le compte de <strong>{aSupprimer.name}</strong> ({aSupprimer.email}) sera supprimé
+              définitivement.
+            </>
+          }
+        />
       )}
 
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-500" />
-        </div>
-      ) : (
-        <>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800 text-gray-400">
-                  <th className="px-5 py-3 text-left font-medium">Utilisateur</th>
-                  <th className="px-5 py-3 text-left font-medium">Rôle</th>
-                  <th className="px-5 py-3 text-left font-medium">Coopérative</th>
-                  <th className="px-5 py-3 text-center font-medium">Plan</th>
-                  <th className="px-5 py-3 text-left font-medium">Inscrit le</th>
-                  <th className="px-5 py-3 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <tr key={u.id} className="border-b border-gray-800/60 hover:bg-gray-800/30">
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold text-white">
-                          {u.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-medium text-white">{u.name}</p>
-                          <p className="text-xs text-gray-500">{u.email}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3">
-                      {editingId === u.id ? (
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={editRole}
-                            onChange={(e) => setEditRole(e.target.value)}
-                            className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-red-500"
-                          >
-                            {ROLES.map((r) => (
-                              <option key={r} value={r}>{r}</option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => handleUpdateRole(u.id)}
-                            disabled={saving}
-                            className="text-green-400 hover:text-green-300"
-                          >
-                            <Check size={15} />
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="text-gray-500 hover:text-white"
-                          >
-                            <X size={15} />
-                          </button>
-                        </div>
-                      ) : (
-                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[u.role] ?? 'bg-gray-700 text-gray-400'}`}>
-                          {u.role}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      <p className="text-white text-sm">{u.tenant.name}</p>
-                      <p className="text-xs text-gray-500">{u.tenant.slug}</p>
-                    </td>
-                    <td className="px-5 py-3 text-center">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        u.tenant.plan === 'PREMIUM'
-                          ? 'bg-yellow-500/20 text-yellow-300'
-                          : 'bg-gray-700 text-gray-400'
-                      }`}>
-                        {u.tenant.plan}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-gray-400 text-xs">
-                      {new Date(u.createdAt).toLocaleDateString('fr-FR')}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      {deleteConfirmId === u.id ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <span className="text-xs text-red-400">Confirmer ?</span>
-                          <button
-                            onClick={() => handleDelete(u.id)}
-                            className="text-xs bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded"
-                          >
-                            Oui
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirmId(null)}
-                            className="text-xs text-gray-400 hover:text-white"
-                          >
-                            Non
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingId(u.id);
-                              setEditRole(u.role);
-                            }}
-                            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
-                            title="Modifier le rôle"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirmId(u.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-lg transition"
-                            title="Supprimer"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {aSuspendre && (
+        <Modal ton="sombre" titre="Suspendre l'utilisateur" onClose={() => setASuspendre(null)}>
+          <p className="text-sm text-gray-300 mb-4">
+            <strong>{aSuspendre.name}</strong> sera déconnecté dès sa prochaine requête, sans
+            attendre l'expiration de sa session.
+          </p>
+          <label className="block text-sm text-gray-400 mb-1.5" htmlFor="motif-user">
+            Motif (conservé dans le journal d'audit)
+          </label>
+          <Champ
+            id="motif-user"
+            ton="sombre"
+            value={motif}
+            onChange={(e) => setMotif(e.target.value)}
+            placeholder="Ex. : départ de la coopérative"
+            autoFocus
+          />
+          <div className="flex justify-end gap-3 mt-6">
+            <Bouton variante="secondaire" ton="sombre" onClick={() => setASuspendre(null)}>
+              Annuler
+            </Bouton>
+            <Bouton
+              variante="danger"
+              ton="sombre"
+              onClick={async () => {
+                const ok = await agir(
+                  () => adminApi.suspendUser(aSuspendre.id, motif),
+                  `${aSuspendre.name} suspendu — session coupée immédiatement`,
+                );
+                if (ok) {
+                  setASuspendre(null);
+                  setMotif('');
+                }
+              }}
+              disabled={enCours || motif.trim().length < 3}
+            >
+              {enCours ? 'En cours…' : 'Suspendre'}
+            </Bouton>
           </div>
+        </Modal>
+      )}
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <p className="text-sm text-gray-400">
-                Page {page} / {totalPages} — {total} résultats
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="p-2 rounded-xl bg-gray-800 text-gray-400 hover:text-white disabled:opacity-40 transition"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="p-2 rounded-xl bg-gray-800 text-gray-400 hover:text-white disabled:opacity-40 transition"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            </div>
-          )}
-        </>
+      {aDeplacer && (
+        <Modal ton="sombre" titre="Changer de coopérative" onClose={() => setADeplacer(null)}>
+          <p className="text-sm text-gray-300 mb-4">
+            <strong>{aDeplacer.name}</strong> quittera « {aDeplacer.tenant?.name} ». Ses sessions
+            seront révoquées, car son jeton porte encore l'ancienne coopérative.
+          </p>
+          <label className="block text-sm text-gray-400 mb-1.5" htmlFor="tenant-cible">
+            Coopérative de destination
+          </label>
+          <Selecteur
+            id="tenant-cible"
+            ton="sombre"
+            value={tenantCible}
+            onChange={(e) => setTenantCible(e.target.value)}
+            className="w-full"
+          >
+            <option value="">Sélectionner…</option>
+            {tenants.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.slug})
+              </option>
+            ))}
+          </Selecteur>
+          <div className="flex justify-end gap-3 mt-6">
+            <Bouton variante="secondaire" ton="sombre" onClick={() => setADeplacer(null)}>
+              Annuler
+            </Bouton>
+            <Bouton
+              ton="sombre"
+              onClick={async () => {
+                const ok = await agir(
+                  () => adminApi.moveUser(aDeplacer.id, tenantCible),
+                  `${aDeplacer.name} déplacé`,
+                );
+                if (ok) setADeplacer(null);
+              }}
+              disabled={enCours || !tenantCible}
+            >
+              {enCours ? 'En cours…' : 'Déplacer'}
+            </Bouton>
+          </div>
+        </Modal>
       )}
     </div>
   );

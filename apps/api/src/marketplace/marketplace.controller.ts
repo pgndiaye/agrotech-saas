@@ -1,12 +1,16 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PlanGuard } from '../auth/guards/plan.guard';
+import { QuotaGuard } from '../common/guards/quota.guard';
+import { RequireQuota } from '../common/decorators/require-quota.decorator';
+import { RequireFeature } from '../auth/decorators/require-plan.decorator';
 import { MarketplaceService } from './marketplace.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 
 @ApiTags('Marketplace')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PlanGuard, QuotaGuard)
 @Controller('marketplace')
 export class MarketplaceController {
   constructor(private marketplaceService: MarketplaceService) {}
@@ -23,6 +27,8 @@ export class MarketplaceController {
   }
 
   @Post()
+  @RequireFeature('marketplacePublish')
+  @RequireQuota('listings')
   create(@Body() dto: CreateListingDto, @Request() req) {
     return this.marketplaceService.create(dto, req.user.tenantId);
   }

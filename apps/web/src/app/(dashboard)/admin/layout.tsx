@@ -7,6 +7,10 @@ import {
   Building2,
   Users,
   CreditCard,
+  Tag,
+  Repeat,
+  ScrollText,
+  Timer,
   LogOut,
   ShieldCheck,
   ChevronLeft,
@@ -18,7 +22,11 @@ const adminNavItems = [
   { href: '/admin', label: 'Vue d\'ensemble', icon: LayoutDashboard, exact: true },
   { href: '/admin/tenants', label: 'Coopératives', icon: Building2 },
   { href: '/admin/users', label: 'Utilisateurs', icon: Users },
+  { href: '/admin/plans', label: 'Plans tarifaires', icon: Tag },
+  { href: '/admin/subscriptions', label: 'Abonnements', icon: Repeat },
   { href: '/admin/payments', label: 'Paiements', icon: CreditCard },
+  { href: '/admin/audit', label: "Journal d'audit", icon: ScrollText },
+  { href: '/admin/tasks', label: 'Tâches planifiées', icon: Timer },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

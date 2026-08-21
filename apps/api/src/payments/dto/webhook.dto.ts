@@ -15,6 +15,17 @@ export class WaveWebhookDto {
   @IsOptional()
   @IsString()
   payment_status?: string; // processing | succeeded | failed
+
+  /** Wave renvoie le montant sous forme de chaîne. Comparé au prix attendu. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  amount?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  currency?: string;
 }
 
 export class OrangeWebhookDto {

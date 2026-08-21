@@ -10,10 +10,13 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PaymentsService } from './payments.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 import { WaveWebhookDto, OrangeWebhookDto } from './dto/webhook.dto';
+import { WaveSignatureGuard } from './guards/wave-signature.guard';
+import { OrangeWebhookGuard } from './guards/orange-webhook.guard';
 
 @ApiTags('Payments')
 @Controller('payments')
@@ -21,6 +24,8 @@ export class PaymentsController {
   constructor(private paymentsService: PaymentsService) {}
 
   @Get('providers')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: "Providers de paiement disponibles (configurés)" })
   getProviders() {
     return this.paymentsService.getAvailableProviders();
@@ -58,17 +63,25 @@ export class PaymentsController {
     return this.paymentsService.simulateConfirm(id, req.user.tenantId);
   }
 
-  // Webhooks — pas de guard JWT (appelés par les APIs externes)
+  // Webhooks — pas de guard JWT (appelés par les APIs externes), mais un guard
+  // de signature dédié. Hors rate limiting : un provider qui relance ses
+  // notifications ne doit pas se faire couper par un 429.
   @Post('webhook/wave')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Webhook Wave (appelé par Wave)" })
+  @SkipThrottle()
+  @UseGuards(WaveSignatureGuard)
+  @ApiOperation({ summary: "Webhook Wave (signature HMAC vérifiée)" })
   waveWebhook(@Body() dto: WaveWebhookDto) {
     return this.paymentsService.handleWaveWebhook(dto);
   }
 
-  @Post('webhook/orange')
+  // Le secret fait partie du chemin : l'URL de notification est construite
+  // côté serveur dans initiatePayment et n'est jamais exposée au client.
+  @Post('webhook/orange/:secret')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Webhook Orange Money (appelé par Orange)" })
+  @SkipThrottle()
+  @UseGuards(OrangeWebhookGuard)
+  @ApiOperation({ summary: "Webhook Orange Money (secret d'URL + revérification)" })
   orangeWebhook(@Body() dto: OrangeWebhookDto) {
     return this.paymentsService.handleOrangeWebhook(dto);
   }

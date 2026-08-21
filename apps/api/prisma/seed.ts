@@ -131,6 +131,50 @@ async function main() {
     },
   });
 
+  // ─── Catalogue tarifaire ──────────────────────────────────────────────────
+  // Une ligne par membre de l'enum Plan : PlanCatalogService.getPlan() est
+  // fail-closed, un plan absent du catalogue ferait échouer les guards.
+  await prisma.planConfig.upsert({
+    where: { code: 'FREE' },
+    update: {},
+    create: {
+      code: 'FREE',
+      label: 'Gratuit',
+      description: 'Météo, stocks et finance de base',
+      priceXof: 0,
+      sortOrder: 0,
+      quotas: { users: 3, stocks: 50, listings: 0, smsPerMonth: 0 },
+      features: {
+        exportCsv: false,
+        smsAlerts: false,
+        marketplacePublish: false,
+        aiRecommendations: false,
+      },
+    },
+  });
+
+  await prisma.planConfig.upsert({
+    where: { code: 'PREMIUM' },
+    update: {},
+    create: {
+      code: 'PREMIUM',
+      label: 'Premium',
+      description: 'Marketplace illimité, exports, IA et alertes SMS',
+      priceXof: 12000,
+      sortOrder: 1,
+      // -1 = illimité
+      quotas: { users: -1, stocks: -1, listings: -1, smsPerMonth: -1 },
+      features: {
+        exportCsv: true,
+        smsAlerts: true,
+        marketplacePublish: true,
+        aiRecommendations: true,
+      },
+    },
+  });
+
+  console.log('Catalogue tarifaire : FREE (0 XOF) et PREMIUM (12 000 XOF/mois)');
+
   console.log(`Super Admin: ${superAdmin.email} / SuperAdmin2026!`);
 }
 

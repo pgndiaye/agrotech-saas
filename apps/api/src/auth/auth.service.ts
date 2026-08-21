@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   UnauthorizedException,
+  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -72,6 +73,32 @@ export class AuthService {
     if (!isPasswordValid) {
       throw new UnauthorizedException('Email ou mot de passe incorrect');
     }
+
+    // Les comptes et organisations suspendus sont refusés dès la connexion, en
+    // plus du contrôle par requête effectué dans JwtStrategy.
+    if (user.status === 'SUSPENDED') {
+      throw new ForbiddenException({
+        code: 'COMPTE_SUSPENDU',
+        message: 'Votre compte a été suspendu',
+      });
+    }
+    if (user.tenant?.status === 'SUSPENDED') {
+      throw new ForbiddenException({
+        code: 'ORGANISATION_SUSPENDUE',
+        message: 'Votre organisation a été suspendue',
+      });
+    }
+    if (user.tenant?.status === 'DELETED') {
+      throw new ForbiddenException({
+        code: 'COMPTE_SUPPRIME',
+        message: "Votre organisation n'existe plus",
+      });
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
 
     const token = this.generateToken(user);
     return { user: this.sanitizeUser(user), token };

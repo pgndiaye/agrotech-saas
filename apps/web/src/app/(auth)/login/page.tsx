@@ -1,23 +1,48 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+
+/** Motifs de déconnexion forcée renvoyés par l'API dans `?raison=`. */
+const MESSAGES_RAISON: Record<string, string> = {
+  COMPTE_SUSPENDU:
+    'Votre compte a été suspendu. Contactez l’administrateur de la plateforme.',
+  ORGANISATION_SUSPENDUE:
+    'Votre coopérative a été suspendue. Contactez l’administrateur de la plateforme.',
+  COMPTE_SUPPRIME: 'Votre coopérative n’existe plus.',
+  SESSION_REVOQUEE:
+    'Votre session a été révoquée. Veuillez vous reconnecter.',
+};
 
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Lu depuis window plutôt que via useSearchParams : cela évite d'imposer une
+  // frontière Suspense au prérendu, et suit le pattern déjà utilisé ailleurs.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const raison = params.get('raison');
+    if (raison && MESSAGES_RAISON[raison]) {
+      setInfo(MESSAGES_RAISON[raison]);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setInfo('');
     setLoading(true);
     try {
       await login(form.email, form.password);
-      router.push('/dashboard');
+      // Le middleware ajoute ?redirect=… quand il intercepte une page protégée.
+      const redirect = new URLSearchParams(window.location.search).get('redirect');
+      router.push(redirect && redirect.startsWith('/') ? redirect : '/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Identifiants incorrects');
     } finally {
@@ -33,6 +58,12 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-gray-900">AgroTech SN</h1>
           <p className="text-gray-500 mt-1">Connexion à votre espace</p>
         </div>
+
+        {info && (
+          <div className="bg-orange-50 border border-orange-200 text-orange-800 rounded-lg p-3 mb-4 text-sm">
+            {info}
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-4 text-sm">

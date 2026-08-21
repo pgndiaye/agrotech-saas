@@ -7,26 +7,9 @@ import {
   CloudSun, Droplets, Wind, TrendingUp, TrendingDown, Package, AlertTriangle,
 } from 'lucide-react';
 
-const DashboardAreaChart = dynamic(() => import('./DashboardAreaChart'), { ssr: false });
+import { StatCard } from '@/components/ui/StatCard';
 
-function StatCard({
-  title, value, subtitle, icon: Icon, color,
-}: {
-  title: string; value: string; subtitle?: string; icon: any; color: string;
-}) {
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm text-gray-500 font-medium">{title}</p>
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
-          <Icon size={18} className="text-white" />
-        </div>
-      </div>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
-      {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
-    </div>
-  );
-}
+const DashboardAreaChart = dynamic(() => import('./DashboardAreaChart'), { ssr: false });
 
 function WeatherCard({ weather }: { weather: any }) {
   if (!weather) return null;
@@ -116,32 +99,32 @@ export default function DashboardPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Revenus"
-          value={summary ? formatFCFA(summary.income) : '—'}
-          subtitle="Total cumulé"
-          icon={TrendingUp}
-          color="bg-green-500"
+          label="Revenus"
+          valeur={summary ? formatFCFA(summary.income) : '—'}
+          detail="Total cumulé"
+          icone={<TrendingUp size={18} className="text-white" />}
+          couleur="bg-green-500"
         />
         <StatCard
-          title="Dépenses"
-          value={summary ? formatFCFA(summary.expense) : '—'}
-          subtitle="Total cumulé"
-          icon={TrendingDown}
-          color="bg-red-500"
+          label="Dépenses"
+          valeur={summary ? formatFCFA(summary.expense) : '—'}
+          detail="Total cumulé"
+          icone={<TrendingDown size={18} className="text-white" />}
+          couleur="bg-red-500"
         />
         <StatCard
-          title="Solde"
-          value={summary ? formatFCFA(summary.balance) : '—'}
-          subtitle="Bénéfice net"
-          icon={TrendingUp}
-          color="bg-primary-600"
+          label="Solde"
+          valeur={summary ? formatFCFA(summary.balance) : '—'}
+          detail="Bénéfice net"
+          icone={<TrendingUp size={18} className="text-white" />}
+          couleur="bg-primary-600"
         />
         <StatCard
-          title="Stocks"
-          value={stockStats ? `${stockStats.total} articles` : '—'}
-          subtitle={stockStats ? `${stockStats.lowStock} en alerte` : ''}
-          icon={Package}
-          color="bg-earth-500"
+          label="Stocks"
+          valeur={stockStats ? `${stockStats.total} articles` : '—'}
+          detail={stockStats ? `${stockStats.lowStock} en alerte` : ''}
+          icone={<Package size={18} className="text-white" />}
+          couleur="bg-earth-500"
         />
       </div>
 

@@ -1,204 +1,229 @@
 'use client';
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { adminApi } from '@/lib/api';
-import { Building2, Users, TrendingUp, CreditCard, Clock, AlertCircle } from 'lucide-react';
+import {
+  Building2,
+  Users,
+  TrendingUp,
+  CreditCard,
+  Clock,
+  AlertCircle,
+  Repeat,
+  TrendingDown,
+  CalendarClock,
+} from 'lucide-react';
+import {
+  AdminPageHeader,
+  AdminStatCard,
+  PlanBadge,
+  RoleBadge,
+  StatutPaiementBadge,
+} from '@/components/admin';
+import { Carte, ChargementCentre, EtatVide } from '@/components/ui/primitives';
+import { formatRelatif, formatXof } from '@/lib/format';
 
-interface Stats {
-  totalTenants: number;
-  totalUsers: number;
-  totalRevenue: number;
-  activeSubscriptions: number;
-  totalPayments: number;
-  pendingPayments: number;
-  plans: { FREE?: number; PREMIUM?: number };
-}
+// ssr: false — recharts mesure le DOM, il ne peut pas être rendu côté serveur.
+const AdminRevenueChart = dynamic(
+  () => import('@/components/charts/AdminCharts').then((m) => m.AdminRevenueChart),
+  { ssr: false },
+);
+const AdminGrowthChart = dynamic(
+  () => import('@/components/charts/AdminCharts').then((m) => m.AdminGrowthChart),
+  { ssr: false },
+);
+const AdminPlanDonut = dynamic(
+  () => import('@/components/charts/AdminCharts').then((m) => m.AdminPlanDonut),
+  { ssr: false },
+);
 
-interface Activity {
-  recentPayments: any[];
-  recentUsers: any[];
-  recentTenants: any[];
-}
+const pourcent = (v: number) => `${(v * 100).toFixed(1)} %`;
 
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  sub,
+function BlocActivite({
+  titre,
+  icone,
+  vide,
+  children,
 }: {
-  label: string;
-  value: string | number;
-  icon: any;
-  color: string;
-  sub?: string;
+  titre: string;
+  icone: React.ReactNode;
+  vide: boolean;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-gray-400 text-sm">{label}</span>
-        <div className={`w-9 h-9 rounded-xl ${color} flex items-center justify-center`}>
-          <Icon size={18} className="text-white" />
-        </div>
-      </div>
-      <p className="text-2xl font-bold text-white">{value}</p>
-      {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
-    </div>
+    <Carte ton="sombre" className="p-5">
+      <h2 className="font-semibold text-white mb-4 flex items-center gap-2">
+        {icone}
+        {titre}
+      </h2>
+      {vide ? (
+        <EtatVide message="Rien à afficher" ton="sombre" />
+      ) : (
+        <div className="space-y-3">{children}</div>
+      )}
+    </Carte>
   );
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  SUCCEEDED: 'text-green-400',
-  PENDING: 'text-yellow-400',
-  FAILED: 'text-red-400',
-  CANCELLED: 'text-gray-400',
-};
-
 export default function AdminDashboardPage() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [activity, setActivity] = useState<Activity | null>(null);
+  const [kpi, setKpi] = useState<any>(null);
+  const [revenus, setRevenus] = useState<any[]>([]);
+  const [croissance, setCroissance] = useState<any[]>([]);
+  const [repartition, setRepartition] = useState<any[]>([]);
+  const [activity, setActivity] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [erreur, setErreur] = useState('');
 
   useEffect(() => {
-    Promise.all([adminApi.getStats(), adminApi.getActivity()])
-      .then(([statsRes, actRes]) => {
-        setStats(statsRes.data);
-        setActivity(actRes.data);
+    Promise.all([
+      adminApi.getKpiOverview(),
+      adminApi.getKpiRevenue(12),
+      adminApi.getKpiGrowth(12),
+      adminApi.getKpiPlans(),
+      adminApi.getActivity(),
+    ])
+      .then(([o, r, g, p, a]) => {
+        setKpi(o.data);
+        setRevenus(r.data);
+        setCroissance(g.data);
+        setRepartition(p.data);
+        setActivity(a.data);
       })
-      .catch(() => setError('Impossible de charger les statistiques'))
+      .catch(() => setErreur('Impossible de charger les indicateurs'))
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-500" />
-      </div>
-    );
-  }
+  if (loading) return <ChargementCentre ton="sombre" />;
 
-  if (error) {
+  if (erreur) {
     return (
       <div className="p-8 flex items-center gap-3 text-red-400">
         <AlertCircle size={20} />
-        {error}
+        {erreur}
       </div>
     );
   }
 
   return (
     <div className="p-8 text-white">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Vue d'ensemble plateforme</h1>
-        <p className="text-gray-400 text-sm mt-1">Statistiques globales de AgroTech SN</p>
+      <AdminPageHeader
+        titre="Vue d'ensemble plateforme"
+        sousTitre="Santé commerciale de AgroTech SN"
+      />
+
+      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+        <AdminStatCard
+          label="MRR — revenu récurrent mensuel"
+          valeur={formatXof(kpi?.mrr ?? 0)}
+          icone={<Repeat size={18} className="text-white" />}
+          couleur="bg-green-600"
+          detail={`ARR ${formatXof(kpi?.arr ?? 0)} · ARPA ${formatXof(kpi?.arpa ?? 0)}`}
+        />
+        <AdminStatCard
+          label="Coopératives payantes"
+          valeur={kpi?.tenantsPayants ?? 0}
+          icone={<Building2 size={18} className="text-white" />}
+          couleur="bg-blue-600"
+          detail={`sur ${kpi?.tenantsTotal ?? 0} au total`}
+        />
+        <AdminStatCard
+          label="Taux de conversion"
+          valeur={pourcent(kpi?.tauxConversion ?? 0)}
+          icone={<TrendingUp size={18} className="text-white" />}
+          couleur="bg-indigo-600"
+          detail="coopératives ayant déjà souscrit"
+        />
+        <AdminStatCard
+          label="Churn 30 jours"
+          valeur={pourcent(kpi?.churn30j ?? 0)}
+          icone={<TrendingDown size={18} className="text-white" />}
+          couleur="bg-red-600"
+          detail="résiliations et expirations"
+        />
+        <AdminStatCard
+          label="Revenus 30 jours"
+          valeur={formatXof(kpi?.revenus30j ?? 0)}
+          icone={<CreditCard size={18} className="text-white" />}
+          couleur="bg-yellow-600"
+          detail={`${kpi?.paiements30j ?? 0} paiement(s) encaissé(s)`}
+        />
+        <AdminStatCard
+          label="Échéances sous 30 jours"
+          valeur={kpi?.abonnementsExpirantJ30 ?? 0}
+          icone={<CalendarClock size={18} className="text-white" />}
+          couleur="bg-orange-600"
+          detail="abonnements à renouveler"
+        />
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
-        <StatCard
-          label="Coopératives"
-          value={stats?.totalTenants ?? 0}
-          icon={Building2}
-          color="bg-blue-600"
-          sub={`${stats?.plans?.FREE ?? 0} Free · ${stats?.plans?.PREMIUM ?? 0} Premium`}
-        />
-        <StatCard
-          label="Utilisateurs"
-          value={stats?.totalUsers ?? 0}
-          icon={Users}
-          color="bg-purple-600"
-        />
-        <StatCard
-          label="Revenus totaux"
-          value={`${(stats?.totalRevenue ?? 0).toLocaleString('fr-FR')} FCFA`}
-          icon={TrendingUp}
-          color="bg-green-600"
-        />
-        <StatCard
-          label="Abonnements actifs"
-          value={stats?.activeSubscriptions ?? 0}
-          icon={CreditCard}
-          color="bg-yellow-600"
-        />
-        <StatCard
-          label="Paiements totaux"
-          value={stats?.totalPayments ?? 0}
-          icon={CreditCard}
-          color="bg-indigo-600"
-          sub={`${stats?.pendingPayments ?? 0} en attente`}
-        />
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
+        <Carte ton="sombre" className="p-5 xl:col-span-2">
+          <h2 className="font-semibold mb-4">Revenus encaissés (12 mois)</h2>
+          <AdminRevenueChart donnees={revenus} />
+        </Carte>
+        <Carte ton="sombre" className="p-5">
+          <h2 className="font-semibold mb-4">Répartition par plan</h2>
+          <AdminPlanDonut donnees={repartition} />
+        </Carte>
       </div>
 
-      {/* Activité récente */}
+      <Carte ton="sombre" className="p-5 mb-6">
+        <h2 className="font-semibold mb-4">Croissance des coopératives</h2>
+        <AdminGrowthChart donnees={croissance} />
+      </Carte>
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Dernières coopératives */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h2 className="font-semibold text-white mb-4 flex items-center gap-2">
-            <Building2 size={16} className="text-blue-400" />
-            Dernières coopératives
-          </h2>
-          <div className="space-y-3">
-            {activity?.recentTenants?.map((t) => (
-              <div key={t.id} className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white font-medium">{t.name}</p>
-                  <p className="text-xs text-gray-500">{t.slug}</p>
-                </div>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full ${
-                    t.plan === 'PREMIUM'
-                      ? 'bg-yellow-500/20 text-yellow-300'
-                      : 'bg-gray-700 text-gray-400'
-                  }`}
-                >
-                  {t.plan}
-                </span>
+        <BlocActivite
+          titre="Dernières coopératives"
+          icone={<Building2 size={16} className="text-blue-400" />}
+          vide={!activity?.recentTenants?.length}
+        >
+          {activity?.recentTenants?.map((t: any) => (
+            <div key={t.id} className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm text-white font-medium truncate">{t.name}</p>
+                <p className="text-xs text-gray-500 truncate">
+                  {t.slug} · {formatRelatif(t.createdAt)}
+                </p>
               </div>
-            ))}
-          </div>
-        </div>
+              <PlanBadge plan={t.plan} />
+            </div>
+          ))}
+        </BlocActivite>
 
-        {/* Derniers utilisateurs */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h2 className="font-semibold text-white mb-4 flex items-center gap-2">
-            <Users size={16} className="text-purple-400" />
-            Derniers utilisateurs
-          </h2>
-          <div className="space-y-3">
-            {activity?.recentUsers?.map((u) => (
-              <div key={u.id} className="flex items-start justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-white font-medium truncate">{u.name}</p>
-                  <p className="text-xs text-gray-500 truncate">{u.email}</p>
-                </div>
-                <span className="text-xs text-gray-400 ml-2 shrink-0">{u.role}</span>
+        <BlocActivite
+          titre="Derniers utilisateurs"
+          icone={<Users size={16} className="text-purple-400" />}
+          vide={!activity?.recentUsers?.length}
+        >
+          {activity?.recentUsers?.map((u: any) => (
+            <div key={u.id} className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-white font-medium truncate">{u.name}</p>
+                <p className="text-xs text-gray-500 truncate">{u.email}</p>
               </div>
-            ))}
-          </div>
-        </div>
+              <RoleBadge role={u.role} />
+            </div>
+          ))}
+        </BlocActivite>
 
-        {/* Derniers paiements */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h2 className="font-semibold text-white mb-4 flex items-center gap-2">
-            <Clock size={16} className="text-green-400" />
-            Derniers paiements
-          </h2>
-          <div className="space-y-3">
-            {activity?.recentPayments?.map((p) => (
-              <div key={p.id} className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white font-medium">
-                    {p.amount.toLocaleString('fr-FR')} FCFA
-                  </p>
-                  <p className="text-xs text-gray-500">{p.tenant?.name} · {p.provider}</p>
-                </div>
-                <span className={`text-xs font-medium ${STATUS_COLORS[p.status] ?? 'text-gray-400'}`}>
-                  {p.status}
-                </span>
+        <BlocActivite
+          titre="Derniers paiements"
+          icone={<Clock size={16} className="text-green-400" />}
+          vide={!activity?.recentPayments?.length}
+        >
+          {activity?.recentPayments?.map((p: any) => (
+            <div key={p.id} className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm text-white font-medium">{formatXof(p.amount)}</p>
+                <p className="text-xs text-gray-500 truncate">
+                  {p.tenant?.name} · {p.provider}
+                </p>
               </div>
-            ))}
-          </div>
-        </div>
+              <StatutPaiementBadge statut={p.status} />
+            </div>
+          ))}
+        </BlocActivite>
       </div>
     </div>
   );

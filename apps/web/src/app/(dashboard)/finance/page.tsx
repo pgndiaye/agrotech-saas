@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { financeApi } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
+import { ConfirmDialog } from '@/components/ui/Modal';
 import { Plus, TrendingUp, TrendingDown, Wallet, X, Trash2, Download, Lock } from 'lucide-react';
 
 const FinanceBarChart = dynamic(() => import('./FinanceBarChart'), { ssr: false });
@@ -92,6 +94,9 @@ function TransactionModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
 }
 
 export default function FinancePage() {
+  const toast = useToast();
+  const [aSupprimer, setASupprimer] = useState<string | null>(null);
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false);
   const { user } = useAuth();
   const isPremium = user?.tenant?.plan === 'PREMIUM';
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -134,16 +139,38 @@ export default function FinancePage() {
 
   useEffect(() => { fetchData(); }, []);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Supprimer cette transaction ?')) return;
-    await financeApi.delete(id);
-    fetchData();
+  // Ouvre la modale de confirmation ; la suppression est faite par confirmerSuppression.
+  const handleDelete = (id: string) => setASupprimer(id);
+
+  const confirmerSuppression = async () => {
+    if (!aSupprimer) return;
+    setSuppressionEnCours(true);
+    try {
+      await financeApi.delete(aSupprimer);
+      toast.succes('Transaction supprimée');
+      setASupprimer(null);
+      fetchData();
+    } catch (err: any) {
+      toast.erreur(err.response?.data?.message ?? 'Erreur lors de la suppression');
+    } finally {
+      setSuppressionEnCours(false);
+    }
   };
 
   const filtered = filter === 'ALL' ? transactions : transactions.filter(t => t.type === filter);
 
   return (
     <div className="space-y-5">
+      {aSupprimer && (
+        <ConfirmDialog
+          titre="Supprimer la transaction"
+          message="Cette transaction sera définitivement supprimée."
+          libelleConfirmation="Supprimer"
+          enCours={suppressionEnCours}
+          onCancel={() => setASupprimer(null)}
+          onConfirm={confirmerSuppression}
+        />
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Finance</h1>
         <div className="flex items-center gap-2">

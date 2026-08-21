@@ -1,233 +1,420 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { adminApi } from '@/lib/api';
 import {
-  Building2, ChevronLeft, ChevronRight, Pencil, Trash2, AlertCircle, Check, X,
+  Building2,
+  Trash2,
+  AlertCircle,
+  Ban,
+  RotateCcw,
+  Plus,
+  Download,
 } from 'lucide-react';
+import { usePaginatedResource } from '@/hooks/usePaginatedResource';
+import { useDebounce } from '@/hooks/useDebounce';
+import { DataTable, Pagination, type Colonne } from '@/components/ui/DataTable';
+import { Modal } from '@/components/ui/Modal';
+import { Bouton, Champ, MessageErreur } from '@/components/ui/primitives';
+import {
+  AdminPageHeader,
+  CelluleIdentite,
+  PlanBadge,
+  StatutCompteBadge,
+} from '@/components/admin';
+import { AdminFilters, EnteteTriable } from '@/components/admin/AdminFilters';
+import { TenantForm, type ValeursTenant } from '@/components/admin/TenantForm';
+import { formatDate } from '@/lib/format';
+import { telechargerBlob, nomFichierDate } from '@/lib/telechargement';
+import { useToast } from '@/context/ToastContext';
 
 interface Tenant {
   id: string;
   name: string;
   slug: string;
   plan: 'FREE' | 'PREMIUM';
+  status: 'ACTIVE' | 'SUSPENDED' | 'DELETED';
   createdAt: string;
   _count: { users: number; stocks: number; transactions: number };
-  subscription?: { status: string; endDate?: string } | null;
 }
 
+const FILTRES = [
+  {
+    cle: 'plan',
+    label: 'Tous les plans',
+    options: [
+      { valeur: 'FREE', label: 'Gratuit' },
+      { valeur: 'PREMIUM', label: 'Premium' },
+    ],
+  },
+  {
+    cle: 'status',
+    label: 'Tous les statuts',
+    options: [
+      { valeur: 'ACTIVE', label: 'Actives' },
+      { valeur: 'SUSPENDED', label: 'Suspendues' },
+      { valeur: 'DELETED', label: 'Supprimées' },
+    ],
+  },
+];
+
 export default function AdminTenantsPage() {
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editPlan, setEditPlan] = useState<'FREE' | 'PREMIUM'>('FREE');
-  const [saving, setSaving] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const toast = useToast();
+  const router = useRouter();
 
-  const limit = 20;
+  const [saisie, setSaisie] = useState('');
+  const recherche = useDebounce(saisie, 400);
+  const [valeursFiltres, setValeursFiltres] = useState<Record<string, string>>({
+    plan: '',
+    status: '',
+  });
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  const fetchTenants = (p: number) => {
-    setLoading(true);
-    adminApi
-      .getTenants(p, limit)
-      .then((res) => {
-        setTenants(res.data.data);
-        setTotal(res.data.total);
-      })
-      .catch(() => setError('Impossible de charger les coopératives'))
-      .finally(() => setLoading(false));
+  const [enCours, setEnCours] = useState(false);
+  const [creation, setCreation] = useState(false);
+  const [aSupprimer, setASupprimer] = useState<Tenant | null>(null);
+  const [confirmSlug, setConfirmSlug] = useState('');
+  const [aSuspendre, setASuspendre] = useState<Tenant | null>(null);
+  const [motif, setMotif] = useState('');
+
+  const filtresApi = {
+    search: recherche || undefined,
+    plan: valeursFiltres.plan || undefined,
+    status: valeursFiltres.status || undefined,
+    sortBy,
+    sortOrder,
   };
 
+  const charger = useCallback(
+    (page: number, limit: number) =>
+      adminApi.getTenants({
+        page,
+        limit,
+        search: recherche || undefined,
+        plan: valeursFiltres.plan || undefined,
+        status: valeursFiltres.status || undefined,
+        sortBy,
+        sortOrder,
+      }),
+    [recherche, valeursFiltres.plan, valeursFiltres.status, sortBy, sortOrder],
+  );
+
+  const { items, total, page, setPage, totalPages, loading, erreur, rafraichir } =
+    usePaginatedResource<Tenant>(charger, {
+      messageErreur: 'Impossible de charger les coopératives',
+    });
+
+  // Tout changement de filtre ramène à la première page, sinon on peut
+  // atterrir sur une page vide.
   useEffect(() => {
-    fetchTenants(page);
-  }, [page]);
+    setPage(1);
+  }, [recherche, valeursFiltres.plan, valeursFiltres.status, sortBy, sortOrder, setPage]);
 
-  const handleUpdatePlan = async (id: string) => {
-    setSaving(true);
+  const trier = (cle: string) => {
+    if (sortBy === cle) setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+    else {
+      setSortBy(cle);
+      setSortOrder('asc');
+    }
+  };
+
+  const majFiltre = (cle: string, valeur: string) =>
+    setValeursFiltres((p) => ({ ...p, [cle]: valeur }));
+
+  const creer = async (v: ValeursTenant) => {
     try {
-      await adminApi.updateTenant(id, { plan: editPlan });
-      setEditingId(null);
-      fetchTenants(page);
-    } catch {
-      alert('Erreur lors de la mise à jour');
+      await adminApi.createTenant({
+        name: v.name,
+        slug: v.slug,
+        plan: v.plan,
+        contactEmail: v.contactEmail || undefined,
+        contactPhone: v.contactPhone || undefined,
+        region: v.region || undefined,
+        notes: v.notes || undefined,
+      });
+      toast.succes(`« ${v.name} » créée`);
+      setCreation(false);
+      await rafraichir();
+    } catch (err: any) {
+      toast.erreur(err.response?.data?.message ?? 'Erreur lors de la création');
+    }
+  };
+
+  const supprimer = async () => {
+    if (!aSupprimer) return;
+    setEnCours(true);
+    try {
+      await adminApi.deleteTenant(aSupprimer.id, confirmSlug);
+      toast.succes(`« ${aSupprimer.name} » supprimée — données conservées en base`);
+      setASupprimer(null);
+      setConfirmSlug('');
+      await rafraichir();
+    } catch (err: any) {
+      toast.erreur(err.response?.data?.message ?? 'Erreur lors de la suppression');
     } finally {
-      setSaving(false);
+      setEnCours(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const suspendre = async () => {
+    if (!aSuspendre) return;
+    setEnCours(true);
     try {
-      await adminApi.deleteTenant(id);
-      setDeleteConfirmId(null);
-      fetchTenants(page);
-    } catch {
-      alert('Erreur lors de la suppression');
+      await adminApi.suspendTenant(aSuspendre.id, motif);
+      toast.succes(`« ${aSuspendre.name} » suspendue — accès coupé immédiatement`);
+      setASuspendre(null);
+      setMotif('');
+      await rafraichir();
+    } catch (err: any) {
+      toast.erreur(err.response?.data?.message ?? 'Erreur lors de la suspension');
+    } finally {
+      setEnCours(false);
     }
   };
 
-  const totalPages = Math.ceil(total / limit);
+  const reactiver = async (t: Tenant) => {
+    try {
+      await adminApi.reactivateTenant(t.id);
+      toast.succes(`« ${t.name} » réactivée`);
+      await rafraichir();
+    } catch (err: any) {
+      toast.erreur(err.response?.data?.message ?? 'Erreur lors de la réactivation');
+    }
+  };
+
+  const exporter = async () => {
+    try {
+      const res = await adminApi.exportTenantsCsv(filtresApi);
+      telechargerBlob(res.data, nomFichierDate('cooperatives'));
+      toast.succes('Export généré');
+    } catch {
+      toast.erreur("Impossible de générer l'export");
+    }
+  };
+
+  const entete = (label: string, cle: string) => (
+    <EnteteTriable
+      label={label}
+      cle={cle}
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      onTri={trier}
+    />
+  );
+
+  const colonnes: Colonne<Tenant>[] = [
+    {
+      cle: 'name',
+      entete: entete('Coopérative', 'name'),
+      rendu: (t) => (
+        <CelluleIdentite
+          titre={t.name}
+          sousTitre={t.slug}
+          couleurIcone="bg-blue-600/20"
+          icone={<Building2 size={14} className="text-blue-400" />}
+        />
+      ),
+    },
+    { cle: 'plan', entete: entete('Plan', 'plan'), rendu: (t) => <PlanBadge plan={t.plan} /> },
+    {
+      cle: 'status',
+      entete: entete('Statut', 'status'),
+      alignement: 'centre',
+      rendu: (t) => <StatutCompteBadge statut={t.status} />,
+    },
+    {
+      cle: 'users',
+      entete: 'Membres',
+      alignement: 'centre',
+      className: 'text-gray-300',
+      rendu: (t) => t._count.users,
+    },
+    {
+      cle: 'stocks',
+      entete: 'Stocks',
+      alignement: 'centre',
+      className: 'text-gray-300',
+      rendu: (t) => t._count.stocks,
+    },
+    {
+      cle: 'transactions',
+      entete: 'Transactions',
+      alignement: 'centre',
+      className: 'text-gray-300',
+      rendu: (t) => t._count.transactions,
+    },
+    {
+      cle: 'createdAt',
+      entete: entete('Créée le', 'createdAt'),
+      className: 'text-gray-400 text-xs',
+      rendu: (t) => formatDate(t.createdAt),
+    },
+    {
+      cle: 'actions',
+      entete: 'Actions',
+      alignement: 'droite',
+      rendu: (t) => (
+        // stopPropagation : la ligne entière navigue vers la fiche détail.
+        <div
+          className="flex items-center justify-end gap-1"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {t.status === 'ACTIVE' ? (
+            <button
+              onClick={() => {
+                setASuspendre(t);
+                setMotif('');
+              }}
+              title="Suspendre"
+              className="p-1.5 text-gray-400 hover:text-orange-400 hover:bg-gray-700 rounded-lg transition"
+            >
+              <Ban size={14} />
+            </button>
+          ) : (
+            <button
+              onClick={() => reactiver(t)}
+              title="Réactiver"
+              className="p-1.5 text-gray-400 hover:text-green-400 hover:bg-gray-700 rounded-lg transition"
+            >
+              <RotateCcw size={14} />
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setASupprimer(t);
+              setConfirmSlug('');
+            }}
+            title="Supprimer"
+            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-lg transition"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div className="p-8 text-white">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold">Coopératives</h1>
-        <p className="text-gray-400 text-sm mt-1">{total} coopératives enregistrées</p>
-      </div>
+      <AdminPageHeader
+        titre="Coopératives"
+        sousTitre={`${total} coopérative${total > 1 ? 's' : ''}`}
+      />
 
-      {error && (
-        <div className="flex items-center gap-2 text-red-400 mb-6">
-          <AlertCircle size={18} /> {error}
-        </div>
+      <AdminFilters
+        recherche={saisie}
+        onRecherche={setSaisie}
+        placeholderRecherche="Rechercher par nom, slug ou contact…"
+        filtres={FILTRES}
+        valeurs={valeursFiltres}
+        onFiltre={majFiltre}
+      >
+        <Bouton variante="secondaire" ton="sombre" onClick={exporter}>
+          <Download size={15} /> Exporter
+        </Bouton>
+        <Bouton ton="sombre" onClick={() => setCreation(true)}>
+          <Plus size={15} /> Nouvelle coopérative
+        </Bouton>
+      </AdminFilters>
+
+      <MessageErreur>
+        {erreur && (
+          <>
+            <AlertCircle size={18} /> {erreur}
+          </>
+        )}
+      </MessageErreur>
+
+      <DataTable
+        ton="sombre"
+        colonnes={colonnes}
+        lignes={items}
+        loading={loading}
+        messageVide="Aucune coopérative ne correspond aux filtres"
+        iconeVide={<Building2 size={40} />}
+        onLigneClick={(t) => router.push(`/admin/tenants/${t.id}`)}
+      />
+
+      <Pagination
+        ton="sombre"
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        libelle="coopératives"
+        onChange={setPage}
+      />
+
+      {creation && <TenantForm onSubmit={creer} onCancel={() => setCreation(false)} />}
+
+      {aSupprimer && (
+        <Modal ton="sombre" titre="Supprimer la coopérative" onClose={() => setASupprimer(null)}>
+          <p className="text-sm text-gray-300 mb-3">
+            « <strong>{aSupprimer.name}</strong> » sera retirée de la plateforme et ses{' '}
+            {aSupprimer._count.users} membre(s) ne pourront plus se connecter.
+          </p>
+          <p className="text-xs text-gray-500 mb-4">
+            Les données restent en base : la destruction définitive est une opération
+            distincte.
+          </p>
+          <label className="block text-sm text-gray-400 mb-1.5" htmlFor="confirm-slug">
+            Saisissez <code className="text-red-400">{aSupprimer.slug}</code> pour confirmer
+          </label>
+          <Champ
+            id="confirm-slug"
+            ton="sombre"
+            value={confirmSlug}
+            onChange={(e) => setConfirmSlug(e.target.value)}
+            placeholder={aSupprimer.slug}
+            autoFocus
+          />
+          <div className="flex justify-end gap-3 mt-6">
+            <Bouton variante="secondaire" ton="sombre" onClick={() => setASupprimer(null)}>
+              Annuler
+            </Bouton>
+            <Bouton
+              variante="danger"
+              ton="sombre"
+              onClick={supprimer}
+              disabled={enCours || confirmSlug !== aSupprimer.slug}
+            >
+              {enCours ? 'Suppression…' : 'Supprimer'}
+            </Bouton>
+          </div>
+        </Modal>
       )}
 
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-500" />
-        </div>
-      ) : (
-        <>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800 text-gray-400">
-                  <th className="px-5 py-3 text-left font-medium">Coopérative</th>
-                  <th className="px-5 py-3 text-left font-medium">Plan</th>
-                  <th className="px-5 py-3 text-center font-medium">Membres</th>
-                  <th className="px-5 py-3 text-center font-medium">Stocks</th>
-                  <th className="px-5 py-3 text-center font-medium">Transactions</th>
-                  <th className="px-5 py-3 text-left font-medium">Créée le</th>
-                  <th className="px-5 py-3 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tenants.map((t) => (
-                  <tr key={t.id} className="border-b border-gray-800/60 hover:bg-gray-800/30">
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-blue-600/20 flex items-center justify-center">
-                          <Building2 size={14} className="text-blue-400" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-white">{t.name}</p>
-                          <p className="text-xs text-gray-500">{t.slug}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3">
-                      {editingId === t.id ? (
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={editPlan}
-                            onChange={(e) => setEditPlan(e.target.value as 'FREE' | 'PREMIUM')}
-                            className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-red-500"
-                          >
-                            <option value="FREE">FREE</option>
-                            <option value="PREMIUM">PREMIUM</option>
-                          </select>
-                          <button
-                            onClick={() => handleUpdatePlan(t.id)}
-                            disabled={saving}
-                            className="text-green-400 hover:text-green-300"
-                          >
-                            <Check size={15} />
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="text-gray-500 hover:text-white"
-                          >
-                            <X size={15} />
-                          </button>
-                        </div>
-                      ) : (
-                        <span
-                          className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
-                            t.plan === 'PREMIUM'
-                              ? 'bg-yellow-500/20 text-yellow-300'
-                              : 'bg-gray-700 text-gray-400'
-                          }`}
-                        >
-                          {t.plan}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-center text-gray-300">{t._count.users}</td>
-                    <td className="px-5 py-3 text-center text-gray-300">{t._count.stocks}</td>
-                    <td className="px-5 py-3 text-center text-gray-300">{t._count.transactions}</td>
-                    <td className="px-5 py-3 text-gray-400 text-xs">
-                      {new Date(t.createdAt).toLocaleDateString('fr-FR')}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      {deleteConfirmId === t.id ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <span className="text-xs text-red-400">Confirmer ?</span>
-                          <button
-                            onClick={() => handleDelete(t.id)}
-                            className="text-xs bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded"
-                          >
-                            Oui
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirmId(null)}
-                            className="text-xs text-gray-400 hover:text-white"
-                          >
-                            Non
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingId(t.id);
-                              setEditPlan(t.plan);
-                            }}
-                            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition"
-                            title="Modifier le plan"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirmId(t.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-lg transition"
-                            title="Supprimer"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {aSuspendre && (
+        <Modal ton="sombre" titre="Suspendre la coopérative" onClose={() => setASuspendre(null)}>
+          <p className="text-sm text-gray-300 mb-4">
+            Les membres de « <strong>{aSuspendre.name}</strong> » perdront l'accès dès leur
+            prochaine requête, sans attendre l'expiration de leur session.
+          </p>
+          <label className="block text-sm text-gray-400 mb-1.5" htmlFor="motif-suspension">
+            Motif (conservé dans le journal d'audit)
+          </label>
+          <Champ
+            id="motif-suspension"
+            ton="sombre"
+            value={motif}
+            onChange={(e) => setMotif(e.target.value)}
+            placeholder="Ex. : impayé depuis 3 mois"
+            autoFocus
+          />
+          <div className="flex justify-end gap-3 mt-6">
+            <Bouton variante="secondaire" ton="sombre" onClick={() => setASuspendre(null)}>
+              Annuler
+            </Bouton>
+            <Bouton
+              variante="danger"
+              ton="sombre"
+              onClick={suspendre}
+              disabled={enCours || motif.trim().length < 3}
+            >
+              {enCours ? 'En cours…' : 'Suspendre'}
+            </Bouton>
           </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <p className="text-sm text-gray-400">
-                Page {page} / {totalPages} — {total} résultats
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="p-2 rounded-xl bg-gray-800 text-gray-400 hover:text-white disabled:opacity-40 transition"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="p-2 rounded-xl bg-gray-800 text-gray-400 hover:text-white disabled:opacity-40 transition"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            </div>
-          )}
-        </>
+        </Modal>
       )}
     </div>
   );

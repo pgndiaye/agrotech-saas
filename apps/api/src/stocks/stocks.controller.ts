@@ -3,13 +3,15 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { QuotaGuard } from '../common/guards/quota.guard';
+import { RequireQuota } from '../common/decorators/require-quota.decorator';
 import { StocksService } from './stocks.service';
 import { CreateStockDto } from './dto/create-stock.dto';
 import { StockMovementDto } from './dto/stock-movement.dto';
 
 @ApiTags('Stocks')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, QuotaGuard)
 @Controller('stocks')
 export class StocksController {
   constructor(private stocksService: StocksService) {}
@@ -31,6 +33,7 @@ export class StocksController {
   }
 
   @Post()
+  @RequireQuota('stocks')
   create(@Body() dto: CreateStockDto, @Request() req) {
     return this.stocksService.create(dto, req.user.tenantId);
   }

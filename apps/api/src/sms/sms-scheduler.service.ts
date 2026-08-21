@@ -1,65 +1,73 @@
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { SmsService } from './sms.service';
+import { TaskLockService } from '../common/tasks/task-lock.service';
 
+/** Noms de tâches — servent de clé de verrou, ne pas les renommer à la légère. */
+export const TACHE_ALERTES_QUOTIDIENNES = 'sms-alertes-quotidiennes';
+export const TACHE_DIGEST_HEBDOMADAIRE = 'sms-digest-hebdomadaire';
+
+/**
+ * Planificateur des envois SMS.
+ *
+ * Remplace l'ancien couple `setTimeout` + `setInterval` toutes les 10 minutes,
+ * dont la déduplication reposait sur deux champs en mémoire : elle était perdue
+ * à chaque redémarrage et produisait des doublons dès qu'une seconde instance
+ * de l'API tournait.
+ *
+ * Désormais : un vrai cron, et une exécution revendiquée en base via
+ * `TaskLockService`. Plusieurs instances peuvent tourner en parallèle, une
+ * seule enverra les SMS.
+ */
 @Injectable()
-export class SmsSchedulerService implements OnApplicationBootstrap {
+export class SmsSchedulerService {
   private readonly logger = new Logger(SmsSchedulerService.name);
 
-  /** Date YYYY-MM-DD du dernier envoi des alertes quotidiennes */
-  private lastDailyAlertDate: string | null = null;
-  /** Clé "YYYY-Www" de la dernière semaine traitée pour le digest */
-  private lastWeeklyDigestKey: string | null = null;
+  constructor(
+    private readonly smsService: SmsService,
+    private readonly taskLock: TaskLockService,
+  ) {}
 
-  constructor(private readonly smsService: SmsService) {}
-
-  onApplicationBootstrap() {
-    // Première vérification après 1 min pour ne pas bloquer le démarrage
-    setTimeout(() => this.checkAndSend(), 60_000);
-    // Puis toutes les 10 minutes pour ne plus rater une fenêtre
-    setInterval(() => this.checkAndSend(), 10 * 60 * 1_000);
-    this.logger.log('Planificateur SMS démarré (vérification toutes les 10 min)');
+  // Chaque jour à 8h, heure de Dakar (le serveur peut être en UTC).
+  @Cron('0 8 * * *', { timeZone: 'Africa/Dakar' })
+  async alertesQuotidiennes() {
+    await this.executer(
+      TACHE_ALERTES_QUOTIDIENNES,
+      TaskLockService.cleJour(),
+      'alertes quotidiennes',
+      () => this.smsService.triggerAllAlerts(),
+    );
   }
 
-  private async checkAndSend() {
-    const now = new Date();
-    const hour = now.getHours();
-    const day = now.getDay(); // 0=dim, 1=lun
-
-    // Clé unique du jour (ex: "2026-04-14")
-    const todayKey = now.toISOString().slice(0, 10);
-
-    // Chaque matin entre 8h et 9h — une seule fois par jour
-    if (hour === 8 && this.lastDailyAlertDate !== todayKey) {
-      this.lastDailyAlertDate = todayKey;
-      this.logger.log('Déclenchement alertes quotidiennes (8h)');
-      try {
-        await this.smsService.triggerAllAlerts();
-      } catch (err) {
-        this.logger.error(`Erreur alertes quotidiennes: ${err}`);
-      }
-    }
-
-    // Chaque lundi entre 7h et 8h pour le digest — une seule fois par semaine
-    if (day === 1 && hour === 7) {
-      // Numéro de semaine ISO pour le dédoublonnage
-      const weekKey = `${now.getFullYear()}-W${this.getISOWeek(now)}`;
-      if (this.lastWeeklyDigestKey !== weekKey) {
-        this.lastWeeklyDigestKey = weekKey;
-        this.logger.log('Déclenchement digest hebdomadaire (lundi 7h)');
-        try {
-          await this.smsService.triggerAllWeeklyDigests();
-        } catch (err) {
-          this.logger.error(`Erreur digest hebdomadaire: ${err}`);
-        }
-      }
-    }
+  // Chaque lundi à 7h, heure de Dakar.
+  @Cron('0 7 * * 1', { timeZone: 'Africa/Dakar' })
+  async digestHebdomadaire() {
+    await this.executer(
+      TACHE_DIGEST_HEBDOMADAIRE,
+      TaskLockService.cleSemaine(),
+      'digest hebdomadaire',
+      () => this.smsService.triggerAllWeeklyDigests(),
+    );
   }
 
-  /** Retourne le numéro de semaine ISO (1–53) */
-  private getISOWeek(date: Date): number {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+  private async executer(
+    tache: string,
+    cle: string,
+    libelle: string,
+    travail: () => Promise<unknown>,
+  ) {
+    this.logger.log(`Déclenchement ${libelle} (${cle})`);
+    try {
+      const { execute } = await this.taskLock.runExclusive(tache, cle, travail);
+      if (!execute) {
+        this.logger.log(
+          `${libelle} : occurrence ${cle} déjà traitée, envoi ignoré`,
+        );
+      }
+    } catch (err) {
+      // Déjà journalisé et marqué FAILED par TaskLockService : on absorbe ici
+      // pour qu'une tâche en échec ne remonte pas en exception non gérée.
+      this.logger.error(`Erreur ${libelle} : ${err}`);
+    }
   }
 }

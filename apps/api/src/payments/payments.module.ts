@@ -3,8 +3,10 @@ import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { WaveService } from './wave.service';
 import { OrangeMoneyService } from './orange-money.service';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
+  imports: [SubscriptionsModule],
   controllers: [PaymentsController],
   providers: [PaymentsService, WaveService, OrangeMoneyService],
   exports: [PaymentsService],

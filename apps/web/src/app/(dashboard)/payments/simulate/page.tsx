@@ -31,7 +31,7 @@ export default function SimulatePage() {
       setStatus('success');
       // Mettre à jour le user dans le contexte (tenant.plan → PREMIUM)
       await refreshUser();
-      setTimeout(() => { window.location.href = '/payments'; }, 2000);
+      setTimeout(() => { window.location.href = '/payments'; }, 12000);
     } catch (err: any) {
       setMessage(err.response?.data?.message ?? 'Erreur lors de la confirmation');
       setStatus('error');
@@ -67,7 +67,7 @@ export default function SimulatePage() {
           </div>
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm text-gray-500">Montant</span>
-            <span className="font-bold text-lg text-gray-900">2 000 FCFA</span>
+            <span className="font-bold text-lg text-gray-900">12 000 FCFA</span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-sm text-gray-500">Durée</span>

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { paymentsApi } from '@/lib/api';
+import { paymentsApi, plansApi } from '@/lib/api';
 import { CreditCard, CheckCircle, XCircle, Clock, Zap, Shield, Star, Phone, ExternalLink, RefreshCw } from 'lucide-react';
 
 const formatFCFA = (n: number) =>
@@ -33,16 +33,29 @@ function PaymentModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
     }).catch(() => {});
   }, []);
 
-  const amount = 2000; // 2 000 XOF/mois
+  // Le prix vient du catalogue serveur : il change sans redéploiement, et
+  // c'est de toute façon le serveur qui facture.
+  const [amount, setAmount] = useState(0);
+
+  useEffect(() => {
+    plansApi
+      .getPublics()
+      .then((res) => {
+        const premium = res.data.find((p) => p.code === 'PREMIUM');
+        if (premium) setAmount(premium.priceXof);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
+      // Le montant n'est plus envoyé : le serveur le résout depuis le plan.
       const res = await paymentsApi.initiate({
         provider,
-        amount,
+        planCode: 'PREMIUM',
         phoneNumber: provider === 'ORANGE_MONEY' ? phoneNumber : undefined,
         successUrl: `${window.location.origin}/dashboard/payments?success=true`,
         errorUrl: `${window.location.origin}/dashboard/payments?error=true`,
@@ -188,6 +201,8 @@ function PaymentModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: 
 
 export default function PaymentsPage() {
   const [subscription, setSubscription] = useState<any>(null);
+  // Grille tarifaire serveur : plus aucun prix ni libellé codé en dur ici.
+  const [planPremium, setPlanPremium] = useState<{ priceXof: number; label: string } | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -207,6 +222,16 @@ export default function PaymentsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    plansApi
+      .getPublics()
+      .then((res) => {
+        const premium = res.data.find((p) => p.code === 'PREMIUM');
+        if (premium) setPlanPremium({ priceXof: premium.priceXof, label: premium.label });
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     load();
@@ -271,7 +296,8 @@ export default function PaymentsPage() {
                 <Star size={16} className="text-yellow-500 fill-yellow-500" />
               </div>
               <p className="text-2xl font-bold text-gray-800 mt-1">
-                {formatFCFA(2000)} <span className="text-sm font-normal text-gray-400">/mois</span>
+                {planPremium ? formatFCFA(planPremium.priceXof) : '—'}{' '}
+                <span className="text-sm font-normal text-gray-400">/mois</span>
               </p>
             </div>
             <Zap size={28} className="text-yellow-500" />

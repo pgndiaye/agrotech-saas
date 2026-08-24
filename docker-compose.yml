@@ -10,7 +10,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - '5432:5432'
+      - '5433:5432'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U agrotech -d agrotech_db']
       interval: 10s
@@ -29,11 +29,11 @@ services:
       JWT_EXPIRES_IN: 7d
       OPENWEATHERMAP_API_KEY: ${OPENWEATHERMAP_API_KEY:-your_api_key_here}
       PORT: 3001
-      CORS_ORIGIN: http://localhost:3000,http://localhost:8081
+      CORS_ORIGIN: http://localhost:3002,http://localhost:8081
       NODE_ENV: production
       # URLs utilisées pour construire les liens de retour et de notification
-      APP_URL: ${APP_URL:-http://localhost:3000}
-      API_URL: ${API_URL:-http://localhost:3001/api/v1}
+      APP_URL: ${APP_URL:-http://localhost:3002}
+      API_URL: ${API_URL:-http://localhost:3003/api/v1}
       # Paiements — sans ces variables, les intégrations restent en mode dégradé
       PAYMENT_SIMULATION_MODE: ${PAYMENT_SIMULATION_MODE:-true}
       WAVE_API_KEY: ${WAVE_API_KEY:-}
@@ -52,7 +52,7 @@ services:
       SWAGGER_USER: ${SWAGGER_USER:-}
       SWAGGER_PASSWORD: ${SWAGGER_PASSWORD:-}
     ports:
-      - '3001:3001'
+      - '3003:3001'
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,17 +61,21 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        # Inliné dans le bundle client par Next.js au build : doit correspondre
+        # au port hôte réellement exposé par le service api ci-dessus.
+        NEXT_PUBLIC_API_URL: http://localhost:3003/api/v1
     container_name: agrotech_web
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+      NEXT_PUBLIC_API_URL: http://localhost:3003/api/v1
       NODE_ENV: production
       # Le middleware Edge vérifie la signature du JWT pour protéger /admin.
       # Variable serveur uniquement — surtout pas de préfixe NEXT_PUBLIC_.
       # Doit être identique à celle de l'API.
       JWT_SECRET: ${JWT_SECRET:-change-this-in-production-super-secret}
     ports:
-      - '3000:3000'
+      - '3002:3000'
     depends_on:
       - api
 
